@@ -8,7 +8,7 @@ source "${REPO_ROOT}/scripts/setup_env.sh"
 : "${OPENPI_DIR:?Set OPENPI_DIR or source scripts/setup_env.sh}"
 
 EXP_NAME="${EXP_NAME:-selected10_worldpilot_wan_pi05_torch}"
-NPROC_PER_NODE="${NPROC_PER_NODE:-8}"
+NPROC_PER_NODE="${NPROC_PER_NODE:-4}"
 WAN_LATENT_TIME_MODE="${WAN_LATENT_TIME_MODE:-all}"
 
 DRY_RUN=0
@@ -54,4 +54,3 @@ else
     "${COMMON_ARGS[@]}" \
     "$@"
 fi
-

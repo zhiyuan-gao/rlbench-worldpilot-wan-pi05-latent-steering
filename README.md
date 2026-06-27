@@ -12,21 +12,21 @@
 
 ## Branch Profile
 
-当前 `main` 分支对应 **8x A100 40GB** 配置。
+当前 `hpc-4xh100-nvl` 分支对应 **4x H100 NVL 94GB** 配置。
 
 ```text
-branch             main
+branch             hpc-4xh100-nvl
 trainer            PyTorch / DDP
-default GPUs       8x A100 40GB
-NPROC_PER_NODE     8
-pi0.5 baseline     rlbench_pi05_waypoint_baseline_20260606 main branch
+default GPUs       4x H100 NVL 94GB
+NPROC_PER_NODE     4
+pi0.5 baseline     rlbench_pi05_waypoint_baseline_20260606 hpc-4xh100-nvl branch
 dataset format     same LeRobot dataset as pi0.5 waypoint baseline
 ```
 
 另一个分支应保持为：
 
 ```text
-hpc-4xh100-nvl     4x H100 NVL 94GB, NPROC_PER_NODE=4
+main               8x A100 40GB, NPROC_PER_NODE=8
 ```
 
 两条分支只应该在 HPC profile、默认 GPU 数、显存建议和 README 示例上不同；数据格式和方法代码保持一致。
@@ -160,7 +160,7 @@ PI05_ROOT=/raid/home/than/zhiyuan/corl2026/pi05_baseline \
 PYTORCH_WEIGHT_PATH=/path/to/pytorch/pi05_base \
 WAN_LATENT_CACHE_ROOT=/path/to/wan_latent_cache \
 EXP_NAME=selected10_worldpilot_wan_pi05_torch \
-NPROC_PER_NODE=8 \
+NPROC_PER_NODE=4 \
 bash scripts/train_worldpilot_wan_pi05_torch.sh --dry-run
 ```
 
@@ -183,4 +183,3 @@ uv run examples/convert_jax_model_to_pytorch.py \
 3. 在 OpenPI PyTorch pi0.5 forward 中找到 VLM hidden states 注入点。
 4. 接入 `WanFutureVideoFuser`，保持 action head、action format、LeRobot dataset 不变。
 5. 先跑 `time_mode=all`，再比较 `last` 和 `mean`。
-
