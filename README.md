@@ -91,6 +91,23 @@ repo_id: rlbench/selected10_pi05_waypoint_h1
 /raid/home/than/zhiyuan/corl2026/rlbench_pi05_waypoint_baseline_20260606/manifests/selected10_fulltask_heuristic_waypoints_train100_val25_test25_from_train450_stratified_20260606.jsonl
 ```
 
+raw selected1500 数据默认路径：
+
+```text
+SELECTED1500_DATASET_ROOT=/raid/home/than/zhiyuan/selected1500_dataset
+RGB_ROOT_200=${SELECTED1500_DATASET_ROOT}/local200/rgb3_keyframes_intervals
+RGB_ROOT_400=${SELECTED1500_DATASET_ROOT}/remote400/rgb3_keyframes_intervals
+LOWDIM_ROOT_200=${SELECTED1500_DATASET_ROOT}/local200/nonimage_metadata
+LOWDIM_ROOT_400=${SELECTED1500_DATASET_ROOT}/remote400/nonimage_metadata
+```
+
+LeRobot 数据仍由 pi0.5 baseline repo 的 conversion 脚本生成，默认读取：
+
+```text
+HF_LEROBOT_HOME=${PI05_ROOT}/lerobot_home
+repo_id=rlbench/selected10_pi05_waypoint_h1
+```
+
 动作和 proprio 不重新定义：
 
 ```text
@@ -151,6 +168,47 @@ bash scripts/smoke_fuser_shapes.sh
 
 默认 smoke 使用 toy latent size，不代表实际 WAN latent 分辨率。真实训练/缓存时应以 WAN VAE-before-decode latent 的实际 shape 为准。
 
+## WAN Latent Cache
+
+先构建与 pi0.5 LeRobot samples 对齐的 sample index：
+
+```bash
+SPLIT=train \
+bash scripts/build_sample_index.sh
+```
+
+快速 pipeline smoke 可以先导出 dummy latent cache：
+
+```bash
+WAN_LATENT_BACKEND=dummy \
+SPLIT=train \
+bash scripts/export_wan_latent_cache.sh --max-samples 16 --overwrite
+```
+
+真实 WAN VAE-before-decode latent cache：
+
+```bash
+WAN_LATENT_BACKEND=wan-diffusers \
+WAN_BASE_MODEL=/raid/home/than/zhiyuan/finetrainers/pretrained_models/Wan-AI/Wan2.1-FLF2V-14B-720P-diffusers \
+WAN_LORA_DIR=/path/to/wan_lora \
+SPLIT=train \
+bash scripts/export_wan_latent_cache.sh --resume
+```
+
+`wan-diffusers` backend 会读取当前三视角 RGB 和 target waypoint 三视角 RGB，hstack 后调用 WAN FLF pipeline，并保存 per-sample：
+
+```text
+future_video_latents: Tensor[V, C, T_lat, H_lat, W_lat]
+latent_layout:        vcthw
+```
+
+导出后检查 coverage 和 shape：
+
+```bash
+SPLIT=train \
+bash scripts/validate_wan_latent_cache.sh
+```
+
 ## Training Entry
 
 训练入口先固定为 PyTorch/DDP：
@@ -164,7 +222,39 @@ NPROC_PER_NODE=8 \
 bash scripts/train_worldpilot_wan_pi05_torch.sh --dry-run
 ```
 
-`--dry-run` 只检查配置和路径，不启动真正训练。真正训练循环需要后续把 `WanFutureVideoFuser` 接到 OpenPI/pi0.5 PyTorch model 的 VLM hidden states 上。
+`--dry-run` 会构建 OpenPI transformed LeRobot dataset、sample index 和 WAN latent batch，但不启动训练。正式训练去掉 `--dry-run`：
+
+```bash
+PI05_ROOT=/raid/home/than/zhiyuan/corl2026/pi05_baseline \
+PYTORCH_WEIGHT_PATH=/path/to/pytorch/pi05_base \
+EXP_NAME=selected10_worldpilot_wan_pi05_torch \
+NPROC_PER_NODE=8 \
+bash scripts/train_worldpilot_wan_pi05_torch.sh \
+  --batch-size 128 \
+  --num-train-steps 20000 \
+  --save-interval 2000 \
+  --keep-period 2000 \
+  --lr-schedule.warmup-steps 10000
+```
+
+Resume：
+
+```bash
+EXP_NAME=selected10_worldpilot_wan_pi05_torch \
+NPROC_PER_NODE=8 \
+bash scripts/train_worldpilot_wan_pi05_torch.sh --resume
+```
+
+Offline loss eval：
+
+```bash
+EXP_NAME=selected10_worldpilot_wan_pi05_torch \
+bash scripts/eval_worldpilot_wan_pi05_torch.sh \
+  --resume \
+  --num-eval-batches 50
+```
+
+训练脚本现在会实例化 `PI0WanLatentSteeringPytorch`，在 OpenPI PyTorch pi0.5 的 `embed_prefix()` 后注入 `WanFutureVideoFuser`，然后保持 action head、action target、state/action format 不变。
 
 如果只有 JAX pi0.5 checkpoint，需要先在 OpenPI 里转换为 PyTorch 权重：
 
@@ -176,11 +266,21 @@ uv run examples/convert_jax_model_to_pytorch.py \
   --output-path /path/to/pytorch/pi05_base
 ```
 
-## Next Implementation Steps
+## Implementation Status
 
-1. 确认 WAN VAE-before-decode latent 的实际 layout 和 shape。
-2. 写 WAN latent extraction/cache 脚本，使用 pi0.5 baseline 的 LeRobot sample index / RLBench frame index 对齐。
-3. 在 OpenPI PyTorch pi0.5 forward 中找到 VLM hidden states 注入点。
-4. 接入 `WanFutureVideoFuser`，保持 action head、action format、LeRobot dataset 不变。
-5. 先跑 `time_mode=all`，再比较 `last` 和 `mean`。
+已实现：
 
+- raw selected1500 path profile
+- LeRobot/sample-index alignment
+- dummy and `wan-diffusers` WAN latent cache export
+- latent cache validation
+- WAN latent dataloader wrapper
+- `PI0WanLatentSteeringPytorch`
+- PyTorch/DDP train, save, resume
+- offline eval loss entry
+
+仍需要在 HPC 真机上验证：
+
+- `wan-diffusers` backend 返回 latent 的实际 shape 是否和 diffusers 版本一致
+- 真实 WAN LoRA 路径和显存配置
+- 完整 online RLBench rollout eval
