@@ -51,6 +51,20 @@ full_task_heuristic_waypoints
 num_frames
 ```
 
+## Raw RGB / Low-Dim Roots
+
+默认 raw 数据根目录和当前项目里的 selected1500 路径一致：
+
+```text
+SELECTED1500_DATASET_ROOT=/raid/home/than/zhiyuan/selected1500_dataset
+RGB_ROOT_200=${SELECTED1500_DATASET_ROOT}/local200/rgb3_keyframes_intervals
+RGB_ROOT_400=${SELECTED1500_DATASET_ROOT}/remote400/rgb3_keyframes_intervals
+LOWDIM_ROOT_200=${SELECTED1500_DATASET_ROOT}/local200/nonimage_metadata
+LOWDIM_ROOT_400=${SELECTED1500_DATASET_ROOT}/remote400/nonimage_metadata
+```
+
+`source_bundle=all200` 使用 `RGB_ROOT_200/LOWDIM_ROOT_200`，`source_bundle=all400` 使用 `RGB_ROOT_400/LOWDIM_ROOT_400`。WAN latent export 当前只需要 RGB roots；LeRobot conversion 和 online eval 会使用 low-dim roots。
+
 ## WAN Latent Cache
 
 本 repo 额外需要 WAN future video latent cache。推荐每个 sample 一个文件，或者每个 episode 一个 shard；无论存储粒度如何，读取出来的单个 sample 应能返回：
@@ -78,4 +92,3 @@ latent_layout:        "vcthw"
 - 默认 HPC 显存建议。
 - training launcher 的 `NPROC_PER_NODE` 默认值。
 - README 中的机器描述。
-

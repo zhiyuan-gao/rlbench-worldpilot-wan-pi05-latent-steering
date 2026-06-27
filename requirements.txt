@@ -1,3 +1,6 @@
 torch
 safetensors
-
+numpy
+pillow
+tqdm
+wandb

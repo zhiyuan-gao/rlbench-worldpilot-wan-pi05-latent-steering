@@ -3,4 +3,3 @@
 from .fusion import WanFutureVideoFuser
 
 __all__ = ["WanFutureVideoFuser"]
-
