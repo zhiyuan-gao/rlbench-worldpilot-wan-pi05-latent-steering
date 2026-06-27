@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rlbench-worldpilot-wan-pi05"
+version = "0.1.0"
+description = "RLBench WorldPilot-style WAN latent steering sidecar for pi0.5 PyTorch experiments."
+requires-python = ">=3.10"
+dependencies = [
+  "torch",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
