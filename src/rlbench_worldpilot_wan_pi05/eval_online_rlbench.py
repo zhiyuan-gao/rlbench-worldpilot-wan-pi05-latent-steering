@@ -57,7 +57,7 @@ def parse_args() -> argparse.Namespace:
 
     parser.add_argument("--policy-device", default=os.environ.get("POLICY_DEVICE", "cuda:0"))
     parser.add_argument("--pytorch-training-precision", choices=("bfloat16", "float32"), default=os.environ.get("PYTORCH_TRAINING_PRECISION"))
-    parser.add_argument("--wan-latent-shape", default=os.environ.get("WAN_LATENT_SHAPE", "3,16,5,28,28"))
+    parser.add_argument("--wan-latent-shape", default=os.environ.get("WAN_LATENT_SHAPE", "3,16,6,32,32"))
     parser.add_argument("--wan-latent-time-mode", choices=("all", "last", "mean"), default=os.environ.get("WAN_LATENT_TIME_MODE", "all"))
     parser.add_argument("--wan-fuser-num-heads", type=int, default=int(os.environ.get("WAN_FUSER_NUM_HEADS", "8")))
     parser.add_argument("--wan-fuser-dropout", type=float, default=float(os.environ.get("WAN_FUSER_DROPOUT", "0.0")))

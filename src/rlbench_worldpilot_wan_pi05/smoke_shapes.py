@@ -14,9 +14,9 @@ def main() -> None:
     parser.add_argument("--hidden-dim", type=int, default=2048)
     parser.add_argument("--views", type=int, default=3)
     parser.add_argument("--channels", type=int, default=16)
-    parser.add_argument("--latent-steps", type=int, default=5)
-    parser.add_argument("--height", type=int, default=28)
-    parser.add_argument("--width", type=int, default=28)
+    parser.add_argument("--latent-steps", type=int, default=6)
+    parser.add_argument("--height", type=int, default=32)
+    parser.add_argument("--width", type=int, default=32)
     parser.add_argument("--num-heads", type=int, default=8)
     parser.add_argument("--time-mode", choices=["all", "last", "mean"], default="all")
     parser.add_argument("--layout", choices=["bvcthw", "bvtchw", "bcthw", "btchw"], default="bvcthw")
@@ -80,4 +80,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

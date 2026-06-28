@@ -24,7 +24,7 @@ class WanLatentAlignedDataset(torch.utils.data.Dataset):
         *,
         latent_cache_root: str | Path,
         allow_missing_latents: bool = False,
-        dummy_latent_shape: tuple[int, int, int, int, int] = (3, 16, 5, 28, 28),
+        dummy_latent_shape: tuple[int, int, int, int, int] = (3, 16, 6, 32, 32),
         expected_num_inference_steps: int | None = None,
     ) -> None:
         self.base_dataset = base_dataset

@@ -41,7 +41,7 @@ def hstack_views(
 
 
 class DummyWanLatentProvider:
-    def __init__(self, shape: tuple[int, int, int, int, int] = (3, 16, 5, 28, 28)) -> None:
+    def __init__(self, shape: tuple[int, int, int, int, int] = (3, 16, 6, 32, 32)) -> None:
         self.shape = tuple(int(x) for x in shape)
 
     def __call__(
