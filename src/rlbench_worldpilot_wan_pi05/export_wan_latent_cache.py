@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import inspect
 import json
 from pathlib import Path
 from typing import Any
@@ -136,6 +137,13 @@ class WanDiffusersBackend:
         if args.lora_dir is not None and args.lora_dir.as_posix():
             self.pipe.load_lora_weights(args.lora_dir.as_posix(), weight_name="pytorch_lora_weights.safetensors")
         self.pipe.set_progress_bar_config(disable=True)
+        if "last_image" not in set(inspect.signature(self.pipe.__call__).parameters):
+            raise RuntimeError(
+                "The active diffusers WanImageToVideoPipeline does not accept last_image. "
+                "This experiment requires FLF current+event-goal conditioning. Use the WAN/Finetrainers "
+                "environment or a patched diffusers pipeline that supports last_image, or run with "
+                "--backend dummy for plumbing smoke tests."
+            )
 
     def __call__(self, record: dict[str, Any]) -> torch.Tensor:
         current = load_hstack(

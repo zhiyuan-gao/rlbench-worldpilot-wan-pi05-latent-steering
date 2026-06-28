@@ -252,6 +252,7 @@ export WAN_BASE_MODEL=/path/to/Wan2.1-FLF2V-14B-720P-diffusers
 export WAN_LORA_DIR=/path/to/trained_wan_lora
 export WAN_LATENT_CACHE_ROOT=/scratch/path/selected10_worldpilot_wan_latent_cache
 export WAN_NUM_INFERENCE_STEPS=1
+export RLBENCH_ROOT=/path/to/RLBench
 ```
 
 如果只是先做 pipeline smoke test，可以让 LoRA 为空：
@@ -454,6 +455,72 @@ PYTORCH_WEIGHT_PATH       pi0.5 PyTorch checkpoint
 CHECKPOINT_BASE_DIR       output directory for this experiment
 ```
 
+### 9. Online RLBench Rollout Eval
+
+Online eval 不读取预先导出的 WAN latent cache；它会在 RLBench 闭环里实时跑 WAN：
+
+```text
+live RLBench obs + current-event goal RGB + text
+  -> 1-step WAN FLF latent before VAE decode
+  -> PyTorch pi0.5 latent-steering policy
+  -> absolute_rotvec7 waypoint
+  -> rotvec-to-quaternion RLBench planner action
+```
+
+动作语义仍然是原版 pi0.5 baseline 的 full-task next waypoint。WAN steering latent 的 goal 是当前 event/subgoal end；同一个 event 内 goal image 固定，每个控制步用新的当前三视角 RGB 重新跑 WAN。切换到下一个 event 后才换新的 event-end goal image。
+
+先检查 online eval 环境：
+
+```bash
+export COPPELIASIM_ROOT=/path/to/CoppeliaSim_Edu_V4_1_0_Ubuntu20_04
+bash scripts/smoke_online_eval_env.sh
+```
+
+如果想直接用训练目录下最新 checkpoint：
+
+```bash
+cd ${REPO_ROOT}
+
+export SPLIT=val
+export EXP_NAME=selected10_worldpilot_wan_pi05_torch
+export CHECKPOINT_BASE_DIR=/scratch/path/worldpilot_wan_pi05_checkpoints
+export ONLINE_EVAL_OUT=/scratch/path/worldpilot_wan_pi05_online/${EXP_NAME}_${SPLIT}.jsonl
+
+WAN_LATENT_BACKEND=wan-diffusers \
+WAN_NUM_INFERENCE_STEPS=1 \
+bash scripts/eval_online_rlbench_worldpilot_wan_pi05_torch.sh \
+  --task meat_off_grill \
+  --max-episodes-per-task 25 \
+  --max-steps 30 \
+  --max-steps-per-event 8
+```
+
+如果要指定某个 step：
+
+```bash
+export EVAL_CHECKPOINT=${CHECKPOINT_BASE_DIR}/pi05_rlbench_waypoint_h1/${EXP_NAME}/20000
+bash scripts/eval_online_rlbench_worldpilot_wan_pi05_torch.sh --task meat_off_grill
+```
+
+输出包含逐 episode JSONL 和 summary：
+
+```text
+${ONLINE_EVAL_OUT}
+${ONLINE_EVAL_OUT%.jsonl}.summary.json
+```
+
+可以先用 dummy WAN latent 做 plumbing smoke：
+
+```bash
+WAN_LATENT_BACKEND=dummy \
+bash scripts/eval_online_rlbench_worldpilot_wan_pi05_torch.sh \
+  --task meat_off_grill \
+  --max-episodes 1 \
+  --max-steps 1
+```
+
+`wan-diffusers` online backend 需要当前环境的 `WanImageToVideoPipeline` 支持 FLF 的 `last_image` 参数；如果当前 diffusers 版本不支持，需要切到 WAN/Finetrainers 对应环境或 patched pipeline。
+
 ## Shape Smoke
 
 先只验证 WorldPilot-style WAN fuser 的 PyTorch shape：
@@ -552,6 +619,19 @@ bash scripts/eval_worldpilot_wan_pi05_torch.sh \
   --num-eval-batches 50
 ```
 
+Online RLBench rollout eval：
+
+```bash
+EXP_NAME=selected10_worldpilot_wan_pi05_torch \
+CHECKPOINT_BASE_DIR=/scratch/path/worldpilot_wan_pi05_checkpoints \
+WAN_LATENT_BACKEND=wan-diffusers \
+WAN_NUM_INFERENCE_STEPS=1 \
+SPLIT=val \
+bash scripts/eval_online_rlbench_worldpilot_wan_pi05_torch.sh \
+  --task meat_off_grill \
+  --max-episodes-per-task 25
+```
+
 训练脚本现在会实例化 `PI0WanLatentSteeringPytorch`，在 OpenPI PyTorch pi0.5 的 `embed_prefix()` 后注入 `WanFutureVideoFuser`，然后保持 action head、action target、state/action format 不变。
 
 如果只有 JAX pi0.5 checkpoint，需要先在 OpenPI 里转换为 PyTorch 权重：
@@ -577,9 +657,10 @@ uv run examples/convert_jax_model_to_pytorch.py \
 - `PI0WanLatentSteeringPytorch`
 - PyTorch/DDP train, save, resume
 - offline eval loss entry
+- online RLBench rollout eval entry with event/subgoal goal scheduling and per-step WAN latent refresh
 
 仍需要在 HPC 真机上验证：
 
 - `wan-diffusers` backend 返回 latent 的实际 shape 是否和 diffusers 版本一致
 - 真实 WAN LoRA 路径和显存配置
-- 完整 online RLBench rollout eval，包括 event/subgoal scheduler 和每个 event 内的 WAN latent refresh
+- online RLBench rollout 的 CoppeliaSim/RLBench 运行、WAN online backend 显存配置和成功率
