@@ -71,6 +71,8 @@ def build_or_load_sample_index(
     *,
     sample_index_path: str | Path,
     manifest_path: str | Path,
+    event_manifest_path: str | Path | None,
+    goal_mode: str,
     split: str,
     sample_every_n: int,
     rgb_root_200: str | Path | None = None,
@@ -82,6 +84,8 @@ def build_or_load_sample_index(
         return read_jsonl(sample_index_path)
     rows = build_sample_index(
         Path(manifest_path),
+        event_manifest_path=Path(event_manifest_path) if event_manifest_path is not None else None,
+        goal_mode=goal_mode,
         split=split,
         sample_every_n=sample_every_n,
         rgb_root_200=rgb_root_200,
@@ -104,6 +108,8 @@ def create_wan_latent_loader(
     config,
     *,
     manifest_path: str | Path,
+    event_manifest_path: str | Path | None,
+    goal_mode: str,
     sample_index_path: str | Path,
     latent_cache_root: str | Path,
     split: str,
@@ -122,6 +128,8 @@ def create_wan_latent_loader(
     sample_index = build_or_load_sample_index(
         sample_index_path=sample_index_path,
         manifest_path=manifest_path,
+        event_manifest_path=event_manifest_path,
+        goal_mode=goal_mode,
         split=split,
         sample_every_n=sample_every_n,
         rgb_root_200=rgb_root_200,
@@ -158,4 +166,3 @@ def create_wan_latent_loader(
     )
     logging.info("Created WAN latent loader with %d samples, local_batch_size=%d", len(dataset), local_batch_size)
     return loader, data_config
-

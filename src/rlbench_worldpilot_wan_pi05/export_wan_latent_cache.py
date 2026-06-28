@@ -17,6 +17,8 @@ from .sample_index import VIEW_NAMES, build_sample_index, read_jsonl, write_json
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Export WAN VAE-before-decode future-video latent cache.")
     parser.add_argument("--manifest-path", type=Path, required=True)
+    parser.add_argument("--event-manifest-path", type=Path, default=None)
+    parser.add_argument("--goal-mode", choices=("event_end", "next_waypoint"), default="event_end")
     parser.add_argument("--sample-index-path", type=Path, required=True)
     parser.add_argument("--out-dir", type=Path, required=True)
     parser.add_argument("--split", default="train", choices=("train", "val", "test", "all"))
@@ -64,6 +66,8 @@ def ensure_sample_index(args: argparse.Namespace) -> list[dict[str, Any]]:
     else:
         rows = build_sample_index(
             args.manifest_path,
+            event_manifest_path=args.event_manifest_path,
+            goal_mode=args.goal_mode,
             split=args.split,
             sample_every_n=args.sample_every_n,
             rgb_root_200=args.rgb_root_200,
@@ -140,8 +144,9 @@ class WanDiffusersBackend:
             view_width=self.args.view_width,
             num_views=self.args.num_views,
         )
+        goal_paths = record.get("latent_goal_image_paths") or record["target_image_paths"]
         target = load_hstack(
-            record["target_image_paths"],
+            goal_paths,
             height=self.args.height,
             view_width=self.args.view_width,
             num_views=self.args.num_views,
@@ -200,6 +205,8 @@ def main() -> None:
         "written": written,
         "skipped": skipped,
         "split": args.split,
+        "goal_mode": args.goal_mode,
+        "event_manifest_path": args.event_manifest_path.as_posix() if args.event_manifest_path else None,
     }
     (args.out_dir / "export_summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n")
     print(json.dumps(summary, sort_keys=True))
@@ -207,4 +214,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

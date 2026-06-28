@@ -37,6 +37,8 @@ COMMON_ARGS=(
   --exp-name "${EXP_NAME}"
   --lerobot-repo-id "${LEROBOT_REPO_ID}"
   --manifest-path "${MANIFEST_PATH}"
+  --event-manifest-path "${EVENT_MANIFEST_PATH}"
+  --goal-mode "${WAN_LATENT_GOAL_MODE}"
   --wan-latent-cache-root "${WAN_LATENT_CACHE_ROOT}"
   --time-mode "${WAN_LATENT_TIME_MODE}"
 )
