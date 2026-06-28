@@ -79,6 +79,8 @@ LOWDIM_ROOT_400=${SELECTED1500_DATASET_ROOT}/remote400/nonimage_metadata
 
 `source_bundle=all200` 使用 `RGB_ROOT_200/LOWDIM_ROOT_200`，`source_bundle=all400` 使用 `RGB_ROOT_400/LOWDIM_ROOT_400`。WAN latent export 当前只需要 RGB roots；LeRobot conversion 和 online eval 会使用 low-dim roots。
 
+Online RLBench eval 不读取离线 WAN latent cache。它使用 low-dim episode demo 做 `reset_to_demo`，用 raw RGB roots 读取当前 event/subgoal end 的 oracle goal image，然后在每个控制步用 live RLBench RGB 重新跑 WAN latent provider。
+
 ## WAN Latent Cache
 
 本 repo 额外需要 WAN future video latent cache。推荐每个 sample 一个文件，或者每个 episode 一个 shard；无论存储粒度如何，读取出来的单个 sample 应能返回：
