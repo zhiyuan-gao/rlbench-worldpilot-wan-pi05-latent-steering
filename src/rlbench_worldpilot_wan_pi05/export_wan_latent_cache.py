@@ -32,7 +32,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--view-width", type=int, default=256)
     parser.add_argument("--num-views", type=int, default=3)
     parser.add_argument("--num-frames", type=int, default=21)
-    parser.add_argument("--num-inference-steps", type=int, default=10)
+    parser.add_argument("--num-inference-steps", type=int, default=1)
     parser.add_argument("--guidance-scale", type=float, default=1.0)
     parser.add_argument("--lora-scale", type=float, default=1.0)
     parser.add_argument("--dtype", choices=("bf16", "fp16", "fp32"), default="bf16")
@@ -194,7 +194,19 @@ def main() -> None:
             skipped += 1
             continue
         latents = backend(record) if backend is not None else dummy_latents(args, record)
-        save_latent_record(out_path, latents, record=record, latent_layout="vcthw", backend=args.backend)
+        save_latent_record(
+            out_path,
+            latents,
+            record=record,
+            latent_layout="vcthw",
+            backend=args.backend,
+            metadata={
+                "num_inference_steps": int(args.num_inference_steps),
+                "num_frames": int(args.num_frames),
+                "guidance_scale": float(args.guidance_scale),
+                "lora_scale": float(args.lora_scale),
+            },
+        )
         written += 1
 
     summary = {
@@ -207,6 +219,8 @@ def main() -> None:
         "split": args.split,
         "goal_mode": args.goal_mode,
         "event_manifest_path": args.event_manifest_path.as_posix() if args.event_manifest_path else None,
+        "num_inference_steps": int(args.num_inference_steps),
+        "num_frames": int(args.num_frames),
     }
     (args.out_dir / "export_summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n")
     print(json.dumps(summary, sort_keys=True))

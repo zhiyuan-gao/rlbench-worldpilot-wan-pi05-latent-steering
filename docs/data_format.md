@@ -27,7 +27,7 @@ task                   string
 absolute_rotvec7 = x, y, z, rx, ry, rz, gripper_open
 ```
 
-动作监督 target 仍然是下一个 full-task heuristic waypoint，`action_horizon=1`。WAN steering latent 的 goal 不是这个 next waypoint，而是当前 sample 所属 event/subgoal 的 end frame。
+动作监督 target 仍然是下一个 full-task heuristic waypoint，`action_horizon=1`。WAN steering latent 的 goal 不是这个 next waypoint，而是当前 sample 所属 event/subgoal 的 end frame。WAN latent 默认取一步 denoising 后、VAE decode 前的 future latent。
 
 ## Manifest
 
@@ -62,6 +62,7 @@ event/subgoal manifest 默认来自 selected1500：
 ```text
 current frame                -> action_target_waypoint_frame = next full-task waypoint
 current frame within event i -> latent_goal_frame = event_keyframes_adjusted[i + 1]
+WAN denoise depth            -> num_inference_steps = 1
 ```
 
 ## Raw RGB / Low-Dim Roots
@@ -97,6 +98,7 @@ event_idx:            int
 event_end_frame:      int
 instruction:          str
 latent_layout:        "vcthw"
+metadata.num_inference_steps: 1
 ```
 
 如果实际提取脚本更容易保存成 `(V, T_lat, C, H_lat, W_lat)`，也可以，但 metadata 必须写清 `latent_layout="vtchw"`，加载时再统一转换。

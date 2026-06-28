@@ -79,6 +79,7 @@ pi0.5 action supervision:
 
 WAN future latent cache:
   current frame -> current event/subgoal end frame
+  denoise depth: 1-step WAN denoising latent, before VAE decode
 ```
 
 例如某条 episode 的 full-task waypoints 是 `[36, 49, 61, 92, 108]`，event/subgoal ends 是 `[49, 108]`，那么：
@@ -91,7 +92,7 @@ current=61  action_target=92   wan_latent_goal=108
 current=92  action_target=108  wan_latent_goal=108
 ```
 
-所以本 repo 的 pi0.5 action target 仍然和原版 RLBench pi0.5 waypoint baseline 一致；只有 WAN cache 的 target image/latent 改成当前 event/subgoal end。
+所以本 repo 的 pi0.5 action target 仍然和原版 RLBench pi0.5 waypoint baseline 一致；WAN cache 的 target image/latent 改成当前 event/subgoal end，并默认保存 **1-step denoise 后、VAE decode 前** 的 WAN future latent。
 
 ## Dataset Format
 
@@ -139,6 +140,7 @@ state/action format: absolute_rotvec7 = x, y, z, rx, ry, rz, gripper_open
 action_horizon:      1
 action target:       next full-task heuristic waypoint
 WAN latent target:   current event/subgoal end frame
+WAN denoise depth:   1-step, VAE-before-decode latent
 views:               front, left_shoulder, right_shoulder
 language:            full-task instruction
 ```
@@ -249,6 +251,7 @@ WAN latent cache 是本 repo 新增的数据。建议放在 scratch 或大容量
 export WAN_BASE_MODEL=/path/to/Wan2.1-FLF2V-14B-720P-diffusers
 export WAN_LORA_DIR=/path/to/trained_wan_lora
 export WAN_LATENT_CACHE_ROOT=/scratch/path/selected10_worldpilot_wan_latent_cache
+export WAN_NUM_INFERENCE_STEPS=1
 ```
 
 如果只是先做 pipeline smoke test，可以让 LoRA 为空：
@@ -265,6 +268,10 @@ sample_index_val.jsonl
 ...
 task/variation/episode/frame_xxx.pt
 ```
+
+默认 `WAN_NUM_INFERENCE_STEPS=1`，也就是保存 WAN 经过一步 denoising 后、VAE decode 前的 future-video latent。若要跑 3-step/5-step 消融，可以覆盖这个环境变量或给 export 脚本传 `--num-inference-steps`。
+
+如果之前已经用其他 denoise step 数导出过 cache，不要和当前 1-step 实验混用；建议换一个新的 `WAN_LATENT_CACHE_ROOT` 或用 `--overwrite` 重新导出。
 
 每个 `.pt` 文件里主要保存：
 
@@ -353,17 +360,17 @@ bash scripts/train_worldpilot_wan_pi05_torch.sh \
 dummy smoke test 通过后，导出真实 WAN VAE-before-decode future video latent：
 
 ```bash
-WAN_LATENT_BACKEND=wan-diffusers SPLIT=train \
+WAN_LATENT_BACKEND=wan-diffusers WAN_NUM_INFERENCE_STEPS=1 SPLIT=train \
 bash scripts/export_wan_latent_cache.sh --resume
 
-WAN_LATENT_BACKEND=wan-diffusers SPLIT=val \
+WAN_LATENT_BACKEND=wan-diffusers WAN_NUM_INFERENCE_STEPS=1 SPLIT=val \
 bash scripts/export_wan_latent_cache.sh --resume
 ```
 
 数据量大时可以用 shard 并行。例如 8 个 Slurm jobs：
 
 ```bash
-WAN_LATENT_BACKEND=wan-diffusers SPLIT=train \
+WAN_LATENT_BACKEND=wan-diffusers WAN_NUM_INFERENCE_STEPS=1 SPLIT=train \
 bash scripts/export_wan_latent_cache.sh \
   --num-shards 8 \
   --shard-index 0 \
@@ -442,6 +449,7 @@ HF_LEROBOT_HOME           converted pi0.5 LeRobot data home
 WAN_BASE_MODEL            WAN FLF base model
 WAN_LORA_DIR              trained WAN video-model LoRA
 WAN_LATENT_CACHE_ROOT     generated WAN latent cache
+WAN_NUM_INFERENCE_STEPS   default 1 for 1-step denoise WAN latent
 PYTORCH_WEIGHT_PATH       pi0.5 PyTorch checkpoint
 CHECKPOINT_BASE_DIR       output directory for this experiment
 ```
@@ -479,15 +487,17 @@ bash scripts/export_wan_latent_cache.sh --max-samples 16 --overwrite
 WAN_LATENT_BACKEND=wan-diffusers \
 WAN_BASE_MODEL=/raid/home/than/zhiyuan/finetrainers/pretrained_models/Wan-AI/Wan2.1-FLF2V-14B-720P-diffusers \
 WAN_LORA_DIR=/path/to/wan_lora \
+WAN_NUM_INFERENCE_STEPS=1 \
 SPLIT=train \
 bash scripts/export_wan_latent_cache.sh --resume
 ```
 
-`wan-diffusers` backend 会读取当前三视角 RGB 和当前 event/subgoal end 的三视角 RGB，hstack 后调用 WAN FLF pipeline，并保存 per-sample：
+`wan-diffusers` backend 会读取当前三视角 RGB 和当前 event/subgoal end 的三视角 RGB，hstack 后调用 WAN FLF pipeline，并保存 per-sample 的 1-step denoise pre-VAE latent：
 
 ```text
 future_video_latents: Tensor[V, C, T_lat, H_lat, W_lat]
 latent_layout:        vcthw
+metadata.num_inference_steps: 1
 ```
 
 导出后检查 coverage 和 shape：

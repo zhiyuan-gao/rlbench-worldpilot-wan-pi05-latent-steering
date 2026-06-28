@@ -25,6 +25,7 @@ export WAN_LATENT_CACHE_ROOT="${WAN_LATENT_CACHE_ROOT:-${REPO_ROOT}/latent_cache
 export SAMPLE_INDEX_PATH="${SAMPLE_INDEX_PATH:-${WAN_LATENT_CACHE_ROOT}/sample_index_train.jsonl}"
 export WAN_BASE_MODEL="${WAN_BASE_MODEL:-/raid/home/than/zhiyuan/finetrainers/pretrained_models/Wan-AI/Wan2.1-FLF2V-14B-720P-diffusers}"
 export WAN_LORA_DIR="${WAN_LORA_DIR:-}"
+export WAN_NUM_INFERENCE_STEPS="${WAN_NUM_INFERENCE_STEPS:-1}"
 
 export OPENPI_DATA_HOME="${OPENPI_DATA_HOME:-${PI05_ROOT}/openpi_cache}"
 export HF_HOME="${HF_HOME:-${PI05_ROOT}/hf_cache}"

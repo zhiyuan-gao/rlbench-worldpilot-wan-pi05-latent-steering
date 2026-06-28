@@ -20,6 +20,7 @@ def save_latent_record(
     record: dict[str, Any],
     latent_layout: str = "vcthw",
     backend: str,
+    metadata: dict[str, Any] | None = None,
 ) -> None:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -29,6 +30,7 @@ def save_latent_record(
         "view_names": ["front", "left_shoulder", "right_shoulder"],
         "record": record,
         "backend": backend,
+        "metadata": metadata or {},
     }
     torch.save(payload, path)
 
