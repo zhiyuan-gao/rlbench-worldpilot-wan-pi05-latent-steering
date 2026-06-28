@@ -69,6 +69,30 @@ WorldPilot-style WAN fuser:
 
 这个 repo 不使用 Wan transformer block13 hidden tokens；Latent Steering 对齐的是 **VAE-before-decode future video latent**。
 
+## Current Experiment Semantics
+
+本实验把 pi0.5 的动作监督和 WAN steering cache 明确分开：
+
+```text
+pi0.5 action supervision:
+  current frame -> next full-task heuristic waypoint
+
+WAN future latent cache:
+  current frame -> current event/subgoal end frame
+```
+
+例如某条 episode 的 full-task waypoints 是 `[36, 49, 61, 92, 108]`，event/subgoal ends 是 `[49, 108]`，那么：
+
+```text
+current=0   action_target=36   wan_latent_goal=49
+current=36  action_target=49   wan_latent_goal=49
+current=49  action_target=61   wan_latent_goal=108
+current=61  action_target=92   wan_latent_goal=108
+current=92  action_target=108  wan_latent_goal=108
+```
+
+所以本 repo 的 pi0.5 action target 仍然和原版 RLBench pi0.5 waypoint baseline 一致；只有 WAN cache 的 target image/latent 改成当前 event/subgoal end。
+
 ## Dataset Format
 
 HPC 数据格式沿用 pi0.5 waypoint baseline repo。
