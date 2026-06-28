@@ -32,8 +32,9 @@ class PI0WanLatentSteeringPytorch(PI0Pytorch):
     def initialize_wan_fuser(self, wan_latents: torch.Tensor, *, device: torch.device, dtype: torch.dtype) -> None:
         """Materialize lazy fuser parameters before optimizer construction."""
         hidden_dim = int(self.paligemma_with_expert.paligemma.config.text_config.hidden_size)
+        self.wan_fuser.to(device=device, dtype=dtype)
         dummy_hidden = torch.zeros(wan_latents.shape[0], 1, hidden_dim, device=device, dtype=dtype)
-        self.wan_fuser(dummy_hidden, wan_latents.to(device=device), latent_layout="bvcthw")
+        self.wan_fuser(dummy_hidden, wan_latents.to(device=device, dtype=dtype), latent_layout="bvcthw")
 
     def fuse_prefix_with_wan(self, prefix_embs: Tensor, wan_latents: Tensor | None) -> Tensor:
         if wan_latents is None:
@@ -132,4 +133,3 @@ class PI0WanLatentSteeringPytorch(PI0Pytorch):
             x_t = x_t + dt * v_t
             time += dt
         return x_t
-

@@ -7,10 +7,15 @@ source "${REPO_ROOT}/scripts/setup_env.sh"
 
 SPLIT="${SPLIT:-train}"
 SAMPLE_INDEX_PATH="${SAMPLE_INDEX_PATH:-${WAN_LATENT_CACHE_ROOT}/sample_index_${SPLIT}.jsonl}"
+EXTRA_ARGS=()
+if [[ -n "${WAN_EXPECTED_BACKEND:-}" ]]; then
+  EXTRA_ARGS+=(--expected-backend "${WAN_EXPECTED_BACKEND}")
+fi
 
 cd "${OPENPI_DIR}"
 uv run python -m rlbench_worldpilot_wan_pi05.validate_cache \
   --sample-index-path "${SAMPLE_INDEX_PATH}" \
   --cache-root "${WAN_LATENT_CACHE_ROOT}" \
   --expected-num-inference-steps "${WAN_NUM_INFERENCE_STEPS}" \
+  "${EXTRA_ARGS[@]}" \
   "$@"

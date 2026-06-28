@@ -33,6 +33,8 @@ export WAN_BASE_MODEL=/path/to/Wan2.1-FLF2V-14B-720P-diffusers
 export WAN_LORA_DIR=/path/to/trained_wan_lora
 export WAN_LATENT_CACHE_ROOT=/scratch/path/selected10_worldpilot_wan_latent_cache
 export WAN_NUM_INFERENCE_STEPS=1
+export WAN_OUTPUT_LAYOUT=bcthw
+export WAN_EXPECTED_BACKEND=wan-diffusers
 
 # PyTorch pi0.5 checkpoint and outputs.
 export PYTORCH_WEIGHT_PATH=/path/to/pi05_pytorch_checkpoint

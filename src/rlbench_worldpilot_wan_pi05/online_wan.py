@@ -8,7 +8,12 @@ import numpy as np
 from PIL import Image
 import torch
 
-from .export_wan_latent_cache import as_tensor_from_pipeline_output, normalize_hstack_latents, torch_dtype
+from .export_wan_latent_cache import (
+    as_tensor_from_pipeline_output,
+    latent_steps_for_num_frames,
+    normalize_hstack_latents,
+    torch_dtype,
+)
 from .sample_index import VIEW_NAMES
 
 
@@ -78,6 +83,7 @@ class WanDiffusersOnlineProvider:
         lora_scale: float = 1.0,
         dtype: str = "bf16",
         device_map: str = "balanced",
+        output_layout: str = "bcthw",
     ) -> None:
         from diffusers import WanImageToVideoPipeline
 
@@ -88,6 +94,7 @@ class WanDiffusersOnlineProvider:
         self.num_inference_steps = int(num_inference_steps)
         self.guidance_scale = float(guidance_scale)
         self.lora_scale = float(lora_scale)
+        self.output_layout = output_layout
         self.pipe = WanImageToVideoPipeline.from_pretrained(
             Path(base_model).as_posix(),
             torch_dtype=torch_dtype(dtype),
@@ -106,6 +113,10 @@ class WanDiffusersOnlineProvider:
                 "environment or a patched diffusers pipeline that supports last_image, or run with "
                 "--wan-backend dummy for plumbing smoke tests."
             )
+        self.expected_latent_steps = latent_steps_for_num_frames(
+            self.num_frames,
+            temporal_scale=getattr(self.pipe, "vae_scale_factor_temporal", 4),
+        )
 
     @torch.no_grad()
     def __call__(
@@ -144,7 +155,13 @@ class WanDiffusersOnlineProvider:
             return_dict=True,
             attention_kwargs={"scale": float(self.lora_scale)},
         )
-        return normalize_hstack_latents(as_tensor_from_pipeline_output(output), num_views=self.num_views)
+        return normalize_hstack_latents(
+            as_tensor_from_pipeline_output(output),
+            num_views=self.num_views,
+            output_layout=self.output_layout,
+            expected_channels=16,
+            expected_latent_steps=self.expected_latent_steps,
+        )
 
 
 def parse_latent_shape(value: str) -> tuple[int, int, int, int, int]:

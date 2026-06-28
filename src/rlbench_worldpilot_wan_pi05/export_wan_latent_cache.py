@@ -33,6 +33,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--view-width", type=int, default=256)
     parser.add_argument("--num-views", type=int, default=3)
     parser.add_argument("--num-frames", type=int, default=21)
+    parser.add_argument("--wan-output-layout", choices=("bcthw", "btchw"), default="bcthw")
     parser.add_argument("--num-inference-steps", type=int, default=1)
     parser.add_argument("--guidance-scale", type=float, default=1.0)
     parser.add_argument("--lora-scale", type=float, default=1.0)
@@ -103,15 +104,45 @@ def as_tensor_from_pipeline_output(output) -> torch.Tensor:
     raise TypeError(f"Unsupported WAN latent output type: {type(value)!r}")
 
 
-def normalize_hstack_latents(latents: torch.Tensor, *, num_views: int) -> torch.Tensor:
+def latent_steps_for_num_frames(num_frames: int, temporal_scale: int = 4) -> int:
+    return (int(num_frames) - 1) // int(temporal_scale) + 1
+
+
+def normalize_hstack_latents(
+    latents: torch.Tensor,
+    *,
+    num_views: int,
+    output_layout: str = "bcthw",
+    expected_channels: int = 16,
+    expected_latent_steps: int | None = None,
+) -> torch.Tensor:
     latents = latents.detach().cpu()
     if latents.ndim != 5:
         raise ValueError(f"Expected WAN latent tensor with 5 dims, got {tuple(latents.shape)}")
-    # Common diffusers shape: [B,C,T,H,W]. Some pipelines return [B,T,C,H,W].
-    if latents.shape[1] <= 64:
+    if output_layout == "bcthw":
+        if latents.shape[1] != int(expected_channels):
+            raise ValueError(
+                f"Expected B,C,T,H,W with C={expected_channels}, got tensor shape {tuple(latents.shape)}. "
+                "If the pipeline returns B,T,C,H,W, set --wan-output-layout btchw."
+            )
+        if expected_latent_steps is not None and latents.shape[2] != int(expected_latent_steps):
+            raise ValueError(
+                f"Expected B,C,T,H,W with T={expected_latent_steps}, got tensor shape {tuple(latents.shape)}"
+            )
         bcthw = latents
-    else:
+    elif output_layout == "btchw":
+        if expected_latent_steps is not None and latents.shape[1] != int(expected_latent_steps):
+            raise ValueError(
+                f"Expected B,T,C,H,W with T={expected_latent_steps}, got tensor shape {tuple(latents.shape)}"
+            )
+        if latents.shape[2] != int(expected_channels):
+            raise ValueError(
+                f"Expected B,T,C,H,W with C={expected_channels}, got tensor shape {tuple(latents.shape)}. "
+                "If the pipeline returns B,C,T,H,W, set --wan-output-layout bcthw."
+            )
         bcthw = latents.permute(0, 2, 1, 3, 4).contiguous()
+    else:
+        raise ValueError(f"Unsupported WAN output layout: {output_layout!r}")
     if bcthw.shape[0] != 1:
         raise ValueError(f"Expected batch size 1 from WAN pipeline, got {tuple(bcthw.shape)}")
     c, t, h, w_total = bcthw.shape[1:]
@@ -143,6 +174,10 @@ class WanDiffusersBackend:
                 "environment or a patched diffusers pipeline that supports last_image, or run with "
                 "--backend dummy for plumbing smoke tests."
             )
+        self.expected_latent_steps = latent_steps_for_num_frames(
+            args.num_frames,
+            temporal_scale=getattr(self.pipe, "vae_scale_factor_temporal", 4),
+        )
 
     def __call__(self, record: dict[str, Any]) -> torch.Tensor:
         current = load_hstack(
@@ -176,7 +211,13 @@ class WanDiffusersBackend:
                 return_dict=True,
                 attention_kwargs={"scale": float(self.args.lora_scale)},
             )
-        return normalize_hstack_latents(as_tensor_from_pipeline_output(output), num_views=self.args.num_views)
+        return normalize_hstack_latents(
+            as_tensor_from_pipeline_output(output),
+            num_views=self.args.num_views,
+            output_layout=self.args.wan_output_layout,
+            expected_channels=16,
+            expected_latent_steps=self.expected_latent_steps,
+        )
 
 
 def dummy_latents(args: argparse.Namespace, record: dict[str, Any]) -> torch.Tensor:
@@ -210,6 +251,7 @@ def main() -> None:
             metadata={
                 "num_inference_steps": int(args.num_inference_steps),
                 "num_frames": int(args.num_frames),
+                "wan_output_layout": args.wan_output_layout,
                 "guidance_scale": float(args.guidance_scale),
                 "lora_scale": float(args.lora_scale),
             },
