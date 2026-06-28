@@ -23,6 +23,7 @@ import openpi.shared.normalize as _normalize
 import openpi.training.config as _config
 
 from .data import create_wan_latent_loader
+from .latent_cache import parse_latent_shape
 from .modeling import PI0WanLatentSteeringPytorch
 
 
@@ -88,6 +89,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--wan-dropout", type=float, default=float(os.environ.get("WAN_FUSER_DROPOUT", "0.0")))
     parser.add_argument("--expected-wan-num-inference-steps", type=int, default=None)
     parser.add_argument("--expected-wan-backend", default=os.environ.get("WAN_EXPECTED_BACKEND"))
+    parser.add_argument("--expected-wan-latent-shape", default=os.environ.get("WAN_LATENT_SHAPE", "3,16,6,32,32"))
     parser.add_argument("--overwrite", action="store_true", default=os.environ.get("OVERWRITE", "0") == "1")
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--no-wandb-enabled", dest="wandb_enabled", action="store_false")
@@ -268,6 +270,7 @@ def main() -> None:
         allow_missing_latents=args.allow_missing_latents,
         expected_num_inference_steps=args.expected_wan_num_inference_steps,
         expected_backend=args.expected_wan_backend,
+        expected_latent_shape=parse_latent_shape(args.expected_wan_latent_shape),
         rebuild_sample_index=args.rebuild_sample_index,
         skip_norm_stats=args.skip_norm_stats,
     )

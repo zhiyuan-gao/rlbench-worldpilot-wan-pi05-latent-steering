@@ -27,6 +27,7 @@ export WAN_BASE_MODEL="${WAN_BASE_MODEL:-/raid/home/than/zhiyuan/finetrainers/pr
 export WAN_LORA_DIR="${WAN_LORA_DIR:-}"
 export WAN_NUM_INFERENCE_STEPS="${WAN_NUM_INFERENCE_STEPS:-1}"
 export WAN_OUTPUT_LAYOUT="${WAN_OUTPUT_LAYOUT:-bcthw}"
+export WAN_LATENT_SHAPE="${WAN_LATENT_SHAPE:-3,16,6,32,32}"
 
 export OPENPI_DATA_HOME="${OPENPI_DATA_HOME:-${PI05_ROOT}/openpi_cache}"
 export HF_HOME="${HF_HOME:-${PI05_ROOT}/hf_cache}"

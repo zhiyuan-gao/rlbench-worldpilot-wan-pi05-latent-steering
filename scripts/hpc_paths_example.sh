@@ -34,6 +34,7 @@ export WAN_LORA_DIR=/path/to/trained_wan_lora
 export WAN_LATENT_CACHE_ROOT=/scratch/path/selected10_worldpilot_wan_latent_cache
 export WAN_NUM_INFERENCE_STEPS=1
 export WAN_OUTPUT_LAYOUT=bcthw
+export WAN_LATENT_SHAPE=3,16,6,32,32
 export WAN_EXPECTED_BACKEND=wan-diffusers
 
 # PyTorch pi0.5 checkpoint and outputs.

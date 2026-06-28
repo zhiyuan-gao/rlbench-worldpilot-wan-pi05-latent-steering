@@ -27,6 +27,7 @@ class WanLatentAlignedDataset(torch.utils.data.Dataset):
         dummy_latent_shape: tuple[int, int, int, int, int] = (3, 16, 6, 32, 32),
         expected_num_inference_steps: int | None = None,
         expected_backend: str | None = None,
+        expected_latent_shape: tuple[int, int, int, int, int] | None = None,
     ) -> None:
         self.base_dataset = base_dataset
         self.sample_index = sample_index
@@ -35,6 +36,7 @@ class WanLatentAlignedDataset(torch.utils.data.Dataset):
         self.dummy_latent_shape = dummy_latent_shape
         self.expected_num_inference_steps = expected_num_inference_steps
         self.expected_backend = expected_backend
+        self.expected_latent_shape = expected_latent_shape
         if len(self.base_dataset) != len(self.sample_index):
             raise ValueError(
                 f"LeRobot dataset length ({len(self.base_dataset)}) does not match sample index "
@@ -54,6 +56,7 @@ class WanLatentAlignedDataset(torch.utils.data.Dataset):
             dummy_shape=self.dummy_latent_shape,
             expected_num_inference_steps=self.expected_num_inference_steps,
             expected_backend=self.expected_backend,
+            expected_shape=self.expected_latent_shape,
         ).numpy()
         sample["lerobot_index"] = np.asarray(int(record["lerobot_index"]), dtype=np.int64)
         return sample
@@ -129,6 +132,7 @@ def create_wan_latent_loader(
     allow_missing_latents: bool = False,
     expected_num_inference_steps: int | None = None,
     expected_backend: str | None = None,
+    expected_latent_shape: tuple[int, int, int, int, int] | None = None,
     rebuild_sample_index: bool = False,
     skip_norm_stats: bool = False,
 ):
@@ -151,6 +155,7 @@ def create_wan_latent_loader(
         allow_missing_latents=allow_missing_latents,
         expected_num_inference_steps=expected_num_inference_steps,
         expected_backend=expected_backend,
+        expected_latent_shape=expected_latent_shape,
     )
     sampler = None
     if torch.distributed.is_initialized():
