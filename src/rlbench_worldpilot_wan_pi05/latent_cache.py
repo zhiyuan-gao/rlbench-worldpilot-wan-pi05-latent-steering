@@ -42,6 +42,8 @@ def load_latents(
     allow_missing: bool = False,
     dummy_shape: tuple[int, int, int, int, int] = (3, 16, 5, 28, 28),
     dummy_dtype: torch.dtype = torch.float16,
+    expected_num_inference_steps: int | None = None,
+    expected_backend: str | None = None,
 ) -> torch.Tensor:
     path = latent_path_for_record(cache_root, record)
     if not path.exists():
@@ -50,8 +52,22 @@ def load_latents(
         raise FileNotFoundError(f"Missing WAN latent cache for lerobot_index={record.get('lerobot_index')}: {path}")
     payload = torch.load(path, map_location="cpu", weights_only=False)
     if isinstance(payload, torch.Tensor):
+        if expected_num_inference_steps is not None or expected_backend is not None:
+            raise ValueError(f"{path} is a raw tensor cache without metadata; cannot verify WAN cache version")
         latents = payload
     elif isinstance(payload, dict):
+        metadata = payload.get("metadata") or {}
+        if expected_num_inference_steps is not None:
+            actual_steps = metadata.get("num_inference_steps")
+            if actual_steps is None or int(actual_steps) != int(expected_num_inference_steps):
+                raise ValueError(
+                    f"{path} has num_inference_steps={actual_steps}, "
+                    f"expected {expected_num_inference_steps}"
+                )
+        if expected_backend is not None:
+            actual_backend = payload.get("backend")
+            if actual_backend != expected_backend:
+                raise ValueError(f"{path} has backend={actual_backend!r}, expected {expected_backend!r}")
         latents = payload.get("future_video_latents")
         if latents is None:
             latents = payload.get("latents")

@@ -331,7 +331,7 @@ ${WAN_LATENT_CACHE_ROOT}/sample_index_val.jsonl
 
 ### 5. Dummy Cache Smoke Test
 
-先不要跑真实 WAN，先用 dummy latent 确认 sample index、cache 读取、OpenPI dataloader 和 pi0.5 steering glue 能连起来：
+先不要跑真实 WAN，先用 dummy latent 确认 sample index、cache 读取和 OpenPI dataloader 能连起来：
 
 ```bash
 WAN_LATENT_BACKEND=dummy SPLIT=train \
@@ -341,11 +341,15 @@ SPLIT=train \
 bash scripts/validate_wan_latent_cache.sh --max-samples 16
 ```
 
-然后做训练 dry-run：
+`--max-samples` 只限制本次导出的 cache 数量，不会把 `sample_index_train.jsonl` 截短。`validate_wan_latent_cache.sh` 会同时检查 cache 里的 `metadata.num_inference_steps` 是否等于当前 `WAN_NUM_INFERENCE_STEPS`。
+
+然后做训练 dataloader dry-run：
 
 ```bash
 export PYTORCH_WEIGHT_PATH=/path/to/pi05_pytorch_checkpoint
 
+SPLIT=train \
+WAN_NUM_INFERENCE_STEPS=1 \
 NPROC_PER_NODE=4 \
 bash scripts/train_worldpilot_wan_pi05_torch.sh \
   --dry-run \
@@ -355,6 +359,8 @@ bash scripts/train_worldpilot_wan_pi05_torch.sh \
 ```
 
 8x A100 分支把 `NPROC_PER_NODE` 改成 `8`。
+
+`--dry-run` 不启动训练，也不加载 pi0.5 base weights；它用于检查 transformed LeRobot dataset、sample index、latent cache batch 和 split/step 配置。fuser shape 单测仍然用 `bash scripts/smoke_fuser_shapes.sh`。
 
 ### 6. Export Real WAN Latent Cache
 
@@ -610,10 +616,11 @@ NPROC_PER_NODE=8 \
 bash scripts/train_worldpilot_wan_pi05_torch.sh --resume
 ```
 
-Offline loss eval：
+Offline loss eval 默认也按当前 LeRobot repo 对齐的 split 读取 sample index；如果 `HF_LEROBOT_HOME` 里只有 train split 转换结果，就保持 `SPLIT=train`。如果单独准备了 val LeRobot repo/cache，再显式设 `SPLIT=val`：
 
 ```bash
 EXP_NAME=selected10_worldpilot_wan_pi05_torch \
+SPLIT=train \
 bash scripts/eval_worldpilot_wan_pi05_torch.sh \
   --resume \
   --num-eval-batches 50
