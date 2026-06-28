@@ -282,6 +282,17 @@ latent_layout:        vcthw
 view_names:           ["front", "left_shoulder", "right_shoulder"]
 ```
 
+当前 exporter 默认 `WAN_NUM_FRAMES=21`、`height=256`、`view_width=256`、三视角 hstack。Wan VAE 的 temporal scale 是 4、spatial scale 是 8，所以默认 per-view latent shape 是：
+
+```text
+future_video_latents: Tensor[3, 16, 6, 32, 32]
+T_lat = (21 - 1) // 4 + 1
+H_lat = 256 // 8
+W_lat = 256 // 8
+```
+
+如果之后改 `--num-frames`、`--height` 或 `--view-width`，dummy cache、fuser smoke 和 online eval 的 `WAN_LATENT_SHAPE` 也要跟着改。
+
 ### 3. Check Inputs
 
 ```bash
@@ -535,7 +546,7 @@ bash scripts/eval_online_rlbench_worldpilot_wan_pi05_torch.sh \
 bash scripts/smoke_fuser_shapes.sh
 ```
 
-默认 smoke 使用 toy latent size，不代表实际 WAN latent 分辨率。真实训练/缓存时应以 WAN VAE-before-decode latent 的实际 shape 为准。
+默认 smoke 使用当前 exporter 默认 WAN latent size：`[B, 3, 16, 6, 32, 32]`，对应 `WAN_NUM_FRAMES=21,height=256,view_width=256`。如果改了 WAN 输入分辨率或帧数，需要给 smoke 脚本显式传 `--latent-steps/--height/--width`。
 
 ## WAN Latent Cache
 

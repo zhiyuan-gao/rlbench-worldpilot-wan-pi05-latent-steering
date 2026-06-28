@@ -40,7 +40,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--device-map", default="balanced")
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--dummy-shape", default="3,16,5,28,28")
+    parser.add_argument("--dummy-shape", default="3,16,6,32,32")
     parser.add_argument("--dummy-fill", choices=("zeros", "randn"), default="zeros")
     parser.add_argument("--max-samples", type=int, default=None)
     parser.add_argument("--num-shards", type=int, default=1)

@@ -40,7 +40,7 @@ def load_latents(
     record: dict[str, Any],
     *,
     allow_missing: bool = False,
-    dummy_shape: tuple[int, int, int, int, int] = (3, 16, 5, 28, 28),
+    dummy_shape: tuple[int, int, int, int, int] = (3, 16, 6, 32, 32),
     dummy_dtype: torch.dtype = torch.float16,
     expected_num_inference_steps: int | None = None,
     expected_backend: str | None = None,
