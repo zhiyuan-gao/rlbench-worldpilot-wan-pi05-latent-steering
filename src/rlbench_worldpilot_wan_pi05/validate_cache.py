@@ -13,6 +13,8 @@ def main() -> None:
     parser.add_argument("--sample-index-path", type=Path, required=True)
     parser.add_argument("--cache-root", type=Path, required=True)
     parser.add_argument("--max-samples", type=int, default=None)
+    parser.add_argument("--expected-num-inference-steps", type=int, default=None)
+    parser.add_argument("--expected-backend", default=None)
     args = parser.parse_args()
 
     rows = read_jsonl(args.sample_index_path)
@@ -25,7 +27,12 @@ def main() -> None:
         if not path.exists():
             missing.append(path.as_posix())
             continue
-        latents = load_latents(args.cache_root, row)
+        latents = load_latents(
+            args.cache_root,
+            row,
+            expected_num_inference_steps=args.expected_num_inference_steps,
+            expected_backend=args.expected_backend,
+        )
         shapes[str(tuple(latents.shape))] = shapes.get(str(tuple(latents.shape)), 0) + 1
     result = {
         "sample_index_path": args.sample_index_path.as_posix(),
@@ -42,4 +49,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

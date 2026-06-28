@@ -25,12 +25,14 @@ class WanLatentAlignedDataset(torch.utils.data.Dataset):
         latent_cache_root: str | Path,
         allow_missing_latents: bool = False,
         dummy_latent_shape: tuple[int, int, int, int, int] = (3, 16, 5, 28, 28),
+        expected_num_inference_steps: int | None = None,
     ) -> None:
         self.base_dataset = base_dataset
         self.sample_index = sample_index
         self.latent_cache_root = Path(latent_cache_root)
         self.allow_missing_latents = allow_missing_latents
         self.dummy_latent_shape = dummy_latent_shape
+        self.expected_num_inference_steps = expected_num_inference_steps
         if len(self.base_dataset) != len(self.sample_index):
             raise ValueError(
                 f"LeRobot dataset length ({len(self.base_dataset)}) does not match sample index "
@@ -48,6 +50,7 @@ class WanLatentAlignedDataset(torch.utils.data.Dataset):
             record,
             allow_missing=self.allow_missing_latents,
             dummy_shape=self.dummy_latent_shape,
+            expected_num_inference_steps=self.expected_num_inference_steps,
         ).numpy()
         sample["lerobot_index"] = np.asarray(int(record["lerobot_index"]), dtype=np.int64)
         return sample
@@ -121,6 +124,7 @@ def create_wan_latent_loader(
     num_workers: int,
     seed: int,
     allow_missing_latents: bool = False,
+    expected_num_inference_steps: int | None = None,
     rebuild_sample_index: bool = False,
     skip_norm_stats: bool = False,
 ):
@@ -141,6 +145,7 @@ def create_wan_latent_loader(
         sample_index,
         latent_cache_root=latent_cache_root,
         allow_missing_latents=allow_missing_latents,
+        expected_num_inference_steps=expected_num_inference_steps,
     )
     sampler = None
     if torch.distributed.is_initialized():

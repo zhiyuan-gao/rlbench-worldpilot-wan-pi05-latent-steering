@@ -73,7 +73,6 @@ def ensure_sample_index(args: argparse.Namespace) -> list[dict[str, Any]]:
             sample_every_n=args.sample_every_n,
             rgb_root_200=args.rgb_root_200,
             rgb_root_400=args.rgb_root_400,
-            max_samples=args.max_samples,
         )
         write_jsonl(args.sample_index_path, rows)
     if args.max_samples is not None:

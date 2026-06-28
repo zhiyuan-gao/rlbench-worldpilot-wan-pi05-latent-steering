@@ -23,7 +23,6 @@ export MANIFEST_PATH="${MANIFEST_PATH:-${PI05_BASELINE_REPO}/manifests/selected1
 export EVENT_MANIFEST_PATH="${EVENT_MANIFEST_PATH:-${SELECTED1500_DATASET_ROOT}/manifests/selected10_event_fullinfo_train100_val25_test25_from_train450_stratified_20260606.jsonl}"
 export WAN_LATENT_GOAL_MODE="${WAN_LATENT_GOAL_MODE:-event_end}"
 export WAN_LATENT_CACHE_ROOT="${WAN_LATENT_CACHE_ROOT:-${REPO_ROOT}/latent_cache/selected10_worldpilot_wan_pi05}"
-export SAMPLE_INDEX_PATH="${SAMPLE_INDEX_PATH:-${WAN_LATENT_CACHE_ROOT}/sample_index_train.jsonl}"
 export WAN_BASE_MODEL="${WAN_BASE_MODEL:-/raid/home/than/zhiyuan/finetrainers/pretrained_models/Wan-AI/Wan2.1-FLF2V-14B-720P-diffusers}"
 export WAN_LORA_DIR="${WAN_LORA_DIR:-}"
 export WAN_NUM_INFERENCE_STEPS="${WAN_NUM_INFERENCE_STEPS:-1}"
