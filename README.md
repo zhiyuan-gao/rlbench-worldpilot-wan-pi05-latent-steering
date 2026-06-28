@@ -272,6 +272,8 @@ export WAN_BASE_MODEL=/path/to/Wan2.1-FLF2V-14B-720P-diffusers
 export WAN_LORA_DIR=/path/to/trained_wan_lora
 export WAN_LATENT_CACHE_ROOT=/scratch/path/selected10_worldpilot_wan_latent_cache
 export WAN_NUM_INFERENCE_STEPS=1
+export WAN_OUTPUT_LAYOUT=bcthw
+export WAN_EXPECTED_BACKEND=wan-diffusers
 export RLBENCH_ROOT=/path/to/RLBench
 ```
 
@@ -291,6 +293,10 @@ task/variation/episode/frame_xxx.pt
 ```
 
 默认 `WAN_NUM_INFERENCE_STEPS=1`，也就是保存 WAN 经过一步 denoising 后、VAE decode 前的 future-video latent。若要跑 3-step/5-step 消融，可以覆盖这个环境变量或给 export 脚本传 `--num-inference-steps`。
+
+`WAN_OUTPUT_LAYOUT` 是 WAN pipeline 返回 latent 的布局，默认 `bcthw`，即 `[B,C,T,H,W]`。如果 patched pipeline 返回 `[B,T,C,H,W]`，设成 `btchw`。代码会校验 `C=16` 和 expected `T_lat`，layout 写错会直接报错，不会静默交换 channel/time。
+
+`WAN_EXPECTED_BACKEND` 是训练/离线 eval 对 cache 的 backend 校验。正式训练默认应该是 `wan-diffusers`，dummy smoke 时临时设成 `dummy`。
 
 如果之前已经用其他 denoise step 数导出过 cache，不要和当前 1-step 实验混用；建议换一个新的 `WAN_LATENT_CACHE_ROOT` 或用 `--overwrite` 重新导出。
 
@@ -365,10 +371,10 @@ ${WAN_LATENT_CACHE_ROOT}/sample_index_val.jsonl
 先不要跑真实 WAN，先用 dummy latent 确认 sample index、cache 读取和 OpenPI dataloader 能连起来：
 
 ```bash
-WAN_LATENT_BACKEND=dummy SPLIT=train \
+WAN_LATENT_BACKEND=dummy WAN_EXPECTED_BACKEND=dummy SPLIT=train \
 bash scripts/export_wan_latent_cache.sh --max-samples 16 --overwrite
 
-SPLIT=train \
+WAN_EXPECTED_BACKEND=dummy SPLIT=train \
 bash scripts/validate_wan_latent_cache.sh --max-samples 16
 ```
 
@@ -381,6 +387,7 @@ export PYTORCH_WEIGHT_PATH=/path/to/pi05_pytorch_checkpoint
 
 SPLIT=train \
 WAN_NUM_INFERENCE_STEPS=1 \
+WAN_EXPECTED_BACKEND=dummy \
 NPROC_PER_NODE=4 \
 bash scripts/train_worldpilot_wan_pi05_torch.sh \
   --dry-run \
@@ -398,17 +405,17 @@ bash scripts/train_worldpilot_wan_pi05_torch.sh \
 dummy smoke test 通过后，导出真实 WAN VAE-before-decode future video latent：
 
 ```bash
-WAN_LATENT_BACKEND=wan-diffusers WAN_NUM_INFERENCE_STEPS=1 SPLIT=train \
+WAN_LATENT_BACKEND=wan-diffusers WAN_EXPECTED_BACKEND=wan-diffusers WAN_NUM_INFERENCE_STEPS=1 SPLIT=train \
 bash scripts/export_wan_latent_cache.sh --resume
 
-WAN_LATENT_BACKEND=wan-diffusers WAN_NUM_INFERENCE_STEPS=1 SPLIT=val \
+WAN_LATENT_BACKEND=wan-diffusers WAN_EXPECTED_BACKEND=wan-diffusers WAN_NUM_INFERENCE_STEPS=1 SPLIT=val \
 bash scripts/export_wan_latent_cache.sh --resume
 ```
 
 数据量大时可以用 shard 并行。例如 8 个 Slurm jobs：
 
 ```bash
-WAN_LATENT_BACKEND=wan-diffusers WAN_NUM_INFERENCE_STEPS=1 SPLIT=train \
+WAN_LATENT_BACKEND=wan-diffusers WAN_EXPECTED_BACKEND=wan-diffusers WAN_NUM_INFERENCE_STEPS=1 SPLIT=train \
 bash scripts/export_wan_latent_cache.sh \
   --num-shards 8 \
   --shard-index 0 \
@@ -420,8 +427,8 @@ bash scripts/export_wan_latent_cache.sh \
 导出后检查 coverage 和 shape：
 
 ```bash
-SPLIT=train bash scripts/validate_wan_latent_cache.sh
-SPLIT=val bash scripts/validate_wan_latent_cache.sh
+WAN_EXPECTED_BACKEND=wan-diffusers SPLIT=train bash scripts/validate_wan_latent_cache.sh
+WAN_EXPECTED_BACKEND=wan-diffusers SPLIT=val bash scripts/validate_wan_latent_cache.sh
 ```
 
 ### 7. Prepare pi0.5 PyTorch Weights
@@ -488,6 +495,8 @@ WAN_BASE_MODEL            WAN FLF base model
 WAN_LORA_DIR              trained WAN video-model LoRA
 WAN_LATENT_CACHE_ROOT     generated WAN latent cache
 WAN_NUM_INFERENCE_STEPS   default 1 for 1-step denoise WAN latent
+WAN_OUTPUT_LAYOUT         bcthw for [B,C,T,H,W], btchw for [B,T,C,H,W]
+WAN_EXPECTED_BACKEND      wan-diffusers for real training, dummy for dummy smoke
 PYTORCH_WEIGHT_PATH       pi0.5 PyTorch checkpoint
 CHECKPOINT_BASE_DIR       output directory for this experiment
 ```
@@ -581,6 +590,7 @@ bash scripts/build_sample_index.sh
 
 ```bash
 WAN_LATENT_BACKEND=dummy \
+WAN_EXPECTED_BACKEND=dummy \
 SPLIT=train \
 bash scripts/export_wan_latent_cache.sh --max-samples 16 --overwrite
 ```
@@ -592,6 +602,7 @@ WAN_LATENT_BACKEND=wan-diffusers \
 WAN_BASE_MODEL=/raid/home/than/zhiyuan/finetrainers/pretrained_models/Wan-AI/Wan2.1-FLF2V-14B-720P-diffusers \
 WAN_LORA_DIR=/path/to/wan_lora \
 WAN_NUM_INFERENCE_STEPS=1 \
+WAN_OUTPUT_LAYOUT=bcthw \
 SPLIT=train \
 bash scripts/export_wan_latent_cache.sh --resume
 ```
@@ -607,6 +618,7 @@ metadata.num_inference_steps: 1
 导出后检查 coverage 和 shape：
 
 ```bash
+WAN_EXPECTED_BACKEND=wan-diffusers \
 SPLIT=train \
 bash scripts/validate_wan_latent_cache.sh
 ```

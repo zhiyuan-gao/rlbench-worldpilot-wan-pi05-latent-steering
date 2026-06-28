@@ -69,6 +69,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--wan-height", type=int, default=256)
     parser.add_argument("--wan-view-width", type=int, default=256)
     parser.add_argument("--wan-num-frames", type=int, default=21)
+    parser.add_argument("--wan-output-layout", choices=("bcthw", "btchw"), default=os.environ.get("WAN_OUTPUT_LAYOUT", "bcthw"))
     parser.add_argument("--wan-num-inference-steps", type=int, default=int(os.environ.get("WAN_NUM_INFERENCE_STEPS", "1")))
     parser.add_argument("--wan-guidance-scale", type=float, default=1.0)
     parser.add_argument("--wan-lora-scale", type=float, default=1.0)
@@ -343,6 +344,7 @@ def make_wan_provider(args: argparse.Namespace):
         lora_scale=args.wan_lora_scale,
         dtype=args.wan_dtype,
         device_map=args.wan_device_map,
+        output_layout=args.wan_output_layout,
     )
 
 

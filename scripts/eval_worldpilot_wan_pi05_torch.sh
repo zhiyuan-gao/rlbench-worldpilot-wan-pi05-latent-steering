@@ -13,6 +13,7 @@ WAN_LATENT_TIME_MODE="${WAN_LATENT_TIME_MODE:-all}"
 CONFIG_NAME="${CONFIG_NAME:-pi05_rlbench_waypoint_h1}"
 SPLIT="${SPLIT:-train}"
 SAMPLE_INDEX_PATH="${SAMPLE_INDEX_PATH:-${WAN_LATENT_CACHE_ROOT}/sample_index_${SPLIT}.jsonl}"
+WAN_EXPECTED_BACKEND="${WAN_EXPECTED_BACKEND:-wan-diffusers}"
 
 COMMON_ARGS=(
   "${CONFIG_NAME}"
@@ -26,6 +27,7 @@ COMMON_ARGS=(
   --split "${SPLIT}"
   --time-mode "${WAN_LATENT_TIME_MODE}"
   --expected-wan-num-inference-steps "${WAN_NUM_INFERENCE_STEPS}"
+  --expected-wan-backend "${WAN_EXPECTED_BACKEND}"
   --eval-only
 )
 if [[ -n "${PYTORCH_WEIGHT_PATH:-}" ]]; then

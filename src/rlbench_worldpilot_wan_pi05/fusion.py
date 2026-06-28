@@ -65,16 +65,20 @@ class WanFutureVideoFuser(nn.Module):
         latents = self._to_bvcthw(wan_latents, latent_layout)
         flat, view_ids, time_ids = self._flatten_latents(latents)
 
-        latent_tokens = self.projector(flat.to(dtype=vlm_hidden_states.dtype))
+        input_dtype = vlm_hidden_states.dtype
+        compute_dtype = self.view_embed.weight.dtype
+        hidden_states_in = vlm_hidden_states.to(dtype=compute_dtype)
+
+        latent_tokens = self.projector(flat.to(dtype=compute_dtype))
         latent_tokens = latent_tokens + self.view_embed(view_ids) + self.time_embed(time_ids)
 
         attn_out, _ = self.cross_attn(
-            query=vlm_hidden_states,
+            query=hidden_states_in,
             key=latent_tokens,
             value=latent_tokens,
             need_weights=False,
         )
-        hidden_states = self.norm(vlm_hidden_states + self.dropout(attn_out))
+        hidden_states = self.norm(hidden_states_in + self.dropout(attn_out)).to(dtype=input_dtype)
         return WanFuserOutput(hidden_states=hidden_states, latent_tokens=latent_tokens)
 
     @staticmethod
@@ -126,4 +130,3 @@ class WanFutureVideoFuser(nn.Module):
         view_ids = view_ids[None].expand(bsz, -1)
         time_ids = time_ids[None].expand(bsz, -1)
         return tokens, view_ids, time_ids
-

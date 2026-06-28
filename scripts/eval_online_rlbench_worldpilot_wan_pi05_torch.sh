@@ -51,6 +51,7 @@ uv run python -m rlbench_worldpilot_wan_pi05.eval_online_rlbench \
   --rgb-root-400 "${RGB_ROOT_400}" \
   --wan-backend "${WAN_LATENT_BACKEND}" \
   --wan-base-model "${WAN_BASE_MODEL}" \
+  --wan-output-layout "${WAN_OUTPUT_LAYOUT:-bcthw}" \
   --wan-num-inference-steps "${WAN_NUM_INFERENCE_STEPS}" \
   --wan-latent-time-mode "${WAN_LATENT_TIME_MODE}" \
   "${EXTRA_ARGS[@]}" \

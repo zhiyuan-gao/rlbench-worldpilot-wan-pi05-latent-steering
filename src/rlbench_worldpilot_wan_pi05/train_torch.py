@@ -88,6 +88,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--wan-num-heads", type=int, default=int(os.environ.get("WAN_FUSER_NUM_HEADS", "8")))
     parser.add_argument("--wan-dropout", type=float, default=float(os.environ.get("WAN_FUSER_DROPOUT", "0.0")))
     parser.add_argument("--expected-wan-num-inference-steps", type=int, default=None)
+    parser.add_argument("--expected-wan-backend", default=os.environ.get("WAN_EXPECTED_BACKEND"))
     parser.add_argument("--overwrite", action="store_true", default=os.environ.get("OVERWRITE", "0") == "1")
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--no-wandb-enabled", dest="wandb_enabled", action="store_false")
@@ -267,6 +268,7 @@ def main() -> None:
         seed=int(config.seed),
         allow_missing_latents=args.allow_missing_latents,
         expected_num_inference_steps=args.expected_wan_num_inference_steps,
+        expected_backend=args.expected_wan_backend,
         rebuild_sample_index=args.rebuild_sample_index,
         skip_norm_stats=args.skip_norm_stats,
     )

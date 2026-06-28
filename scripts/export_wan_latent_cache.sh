@@ -27,6 +27,7 @@ uv run python -m rlbench_worldpilot_wan_pi05.export_wan_latent_cache \
   --rgb-root-400 "${RGB_ROOT_400}" \
   --backend "${WAN_LATENT_BACKEND}" \
   --base-model "${WAN_BASE_MODEL}" \
+  --wan-output-layout "${WAN_OUTPUT_LAYOUT:-bcthw}" \
   --num-inference-steps "${WAN_NUM_INFERENCE_STEPS}" \
   "${EXTRA_ARGS[@]}" \
   "$@"
