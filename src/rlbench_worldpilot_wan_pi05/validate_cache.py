@@ -4,7 +4,7 @@ import argparse
 import json
 from pathlib import Path
 
-from .latent_cache import latent_path_for_record, load_latents
+from .latent_cache import latent_path_for_record, load_latents, parse_latent_shape
 from .sample_index import read_jsonl
 
 
@@ -15,7 +15,9 @@ def main() -> None:
     parser.add_argument("--max-samples", type=int, default=None)
     parser.add_argument("--expected-num-inference-steps", type=int, default=None)
     parser.add_argument("--expected-backend", default=None)
+    parser.add_argument("--expected-latent-shape", default="3,16,6,32,32")
     args = parser.parse_args()
+    expected_shape = parse_latent_shape(args.expected_latent_shape)
 
     rows = read_jsonl(args.sample_index_path)
     if args.max_samples is not None:
@@ -32,10 +34,12 @@ def main() -> None:
             row,
             expected_num_inference_steps=args.expected_num_inference_steps,
             expected_backend=args.expected_backend,
+            expected_shape=expected_shape,
         )
         shapes[str(tuple(latents.shape))] = shapes.get(str(tuple(latents.shape)), 0) + 1
     result = {
         "sample_index_path": args.sample_index_path.as_posix(),
+        "expected_latent_shape": list(expected_shape) if expected_shape is not None else None,
         "cache_root": args.cache_root.as_posix(),
         "checked": len(rows),
         "missing": len(missing),

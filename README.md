@@ -294,6 +294,8 @@ task/variation/episode/frame_xxx.pt
 
 `WAN_EXPECTED_BACKEND` 是训练/离线 eval 对 cache 的 backend 校验。正式训练默认应该是 `wan-diffusers`，dummy smoke 时临时设成 `dummy`。
 
+`WAN_LATENT_SHAPE` 是训练/离线 eval/validate 对 cache 的 shape 校验，默认 `3,16,6,32,32`，对应 `[V,C,T_lat,H_lat,W_lat]`。
+
 如果之前已经用其他 denoise step 数导出过 cache，不要和当前 1-step 实验混用；建议换一个新的 `WAN_LATENT_CACHE_ROOT` 或用 `--overwrite` 重新导出。
 
 每个 `.pt` 文件里主要保存：
@@ -313,7 +315,7 @@ H_lat = 256 // 8
 W_lat = 256 // 8
 ```
 
-如果之后改 `--num-frames`、`--height` 或 `--view-width`，dummy cache、fuser smoke 和 online eval 的 `WAN_LATENT_SHAPE` 也要跟着改。
+如果之后改 `--num-frames`、`--height` 或 `--view-width`，dummy cache、validate、train/eval 和 online eval 的 `WAN_LATENT_SHAPE` 也要跟着改。
 
 ### 3. Check Inputs
 
@@ -374,7 +376,7 @@ WAN_EXPECTED_BACKEND=dummy SPLIT=train \
 bash scripts/validate_wan_latent_cache.sh --max-samples 16
 ```
 
-`--max-samples` 只限制本次导出的 cache 数量，不会把 `sample_index_train.jsonl` 截短。`validate_wan_latent_cache.sh` 会同时检查 cache 里的 `metadata.num_inference_steps` 是否等于当前 `WAN_NUM_INFERENCE_STEPS`。
+`--max-samples` 只限制本次导出的 cache 数量，不会把 `sample_index_train.jsonl` 截短。`validate_wan_latent_cache.sh` 会同时检查 cache 里的 `metadata.num_inference_steps` 是否等于当前 `WAN_NUM_INFERENCE_STEPS`，并检查 latent shape 是否等于 `WAN_LATENT_SHAPE`。
 
 然后做训练 dataloader dry-run：
 
@@ -492,6 +494,7 @@ WAN_LORA_DIR              trained WAN video-model LoRA
 WAN_LATENT_CACHE_ROOT     generated WAN latent cache
 WAN_NUM_INFERENCE_STEPS   default 1 for 1-step denoise WAN latent
 WAN_OUTPUT_LAYOUT         bcthw for [B,C,T,H,W], btchw for [B,T,C,H,W]
+WAN_LATENT_SHAPE          expected [V,C,T_lat,H_lat,W_lat], default 3,16,6,32,32
 WAN_EXPECTED_BACKEND      wan-diffusers for real training, dummy for dummy smoke
 PYTORCH_WEIGHT_PATH       pi0.5 PyTorch checkpoint
 CHECKPOINT_BASE_DIR       output directory for this experiment

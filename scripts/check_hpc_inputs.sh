@@ -16,11 +16,21 @@ check_path() {
   fi
 }
 
+check_optional_path() {
+  local label="$1"
+  local path="$2"
+  if [[ -e "${path}" ]]; then
+    printf '[OK]   %s: %s\n' "${label}" "${path}"
+  else
+    printf '[WARN] %s not found, only needed for reference/debugging: %s\n' "${label}" "${path}"
+  fi
+}
+
 missing=0
 check_path "OPENPI_DIR" "${OPENPI_DIR}" || missing=1
 check_path "PI05_BASELINE_REPO" "${PI05_BASELINE_REPO}" || missing=1
-check_path "WORLDPILOT_DIR" "${WORLDPILOT_DIR}" || missing=1
-check_path "FINETRAINERS_DIR" "${FINETRAINERS_DIR}" || missing=1
+check_optional_path "WORLDPILOT_DIR" "${WORLDPILOT_DIR}"
+check_optional_path "FINETRAINERS_DIR" "${FINETRAINERS_DIR}"
 check_path "SELECTED1500_DATASET_ROOT" "${SELECTED1500_DATASET_ROOT}" || missing=1
 check_path "RGB_ROOT_200" "${RGB_ROOT_200}" || missing=1
 check_path "RGB_ROOT_400" "${RGB_ROOT_400}" || missing=1

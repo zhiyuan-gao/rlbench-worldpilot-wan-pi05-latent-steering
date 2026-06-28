@@ -17,5 +17,6 @@ uv run python -m rlbench_worldpilot_wan_pi05.validate_cache \
   --sample-index-path "${SAMPLE_INDEX_PATH}" \
   --cache-root "${WAN_LATENT_CACHE_ROOT}" \
   --expected-num-inference-steps "${WAN_NUM_INFERENCE_STEPS}" \
+  --expected-latent-shape "${WAN_LATENT_SHAPE}" \
   "${EXTRA_ARGS[@]}" \
   "$@"

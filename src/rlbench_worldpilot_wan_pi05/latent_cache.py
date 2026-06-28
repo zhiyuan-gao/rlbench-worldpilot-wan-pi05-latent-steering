@@ -8,6 +8,18 @@ import torch
 from .sample_index import cache_relpath
 
 
+def parse_latent_shape(value: str | tuple[int, int, int, int, int] | list[int] | None) -> tuple[int, int, int, int, int] | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        parts = tuple(int(x) for x in value.split(","))
+    else:
+        parts = tuple(int(x) for x in value)
+    if len(parts) != 5:
+        raise ValueError(f"Expected V,C,T,H,W latent shape, got {value!r}")
+    return parts
+
+
 def latent_path_for_record(cache_root: str | Path, record: dict[str, Any]) -> Path:
     relpath = str(record.get("latent_relpath") or cache_relpath(record))
     return Path(cache_root) / relpath
@@ -24,13 +36,16 @@ def save_latent_record(
 ) -> None:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
+    metadata_payload = dict(metadata or {})
+    metadata_payload.setdefault("latent_shape", list(latents.shape))
+    metadata_payload.setdefault("latent_layout", latent_layout)
     payload = {
         "future_video_latents": latents.detach().cpu(),
         "latent_layout": latent_layout,
         "view_names": ["front", "left_shoulder", "right_shoulder"],
         "record": record,
         "backend": backend,
-        "metadata": metadata or {},
+        "metadata": metadata_payload,
     }
     torch.save(payload, path)
 
@@ -44,11 +59,12 @@ def load_latents(
     dummy_dtype: torch.dtype = torch.float16,
     expected_num_inference_steps: int | None = None,
     expected_backend: str | None = None,
+    expected_shape: tuple[int, int, int, int, int] | None = None,
 ) -> torch.Tensor:
     path = latent_path_for_record(cache_root, record)
     if not path.exists():
         if allow_missing:
-            return torch.zeros(dummy_shape, dtype=dummy_dtype)
+            return torch.zeros(expected_shape or dummy_shape, dtype=dummy_dtype)
         raise FileNotFoundError(f"Missing WAN latent cache for lerobot_index={record.get('lerobot_index')}: {path}")
     payload = torch.load(path, map_location="cpu", weights_only=False)
     if isinstance(payload, torch.Tensor):
@@ -68,6 +84,10 @@ def load_latents(
             actual_backend = payload.get("backend")
             if actual_backend != expected_backend:
                 raise ValueError(f"{path} has backend={actual_backend!r}, expected {expected_backend!r}")
+        if expected_shape is not None and metadata.get("latent_shape") is not None:
+            actual_shape = parse_latent_shape(metadata.get("latent_shape"))
+            if actual_shape != expected_shape:
+                raise ValueError(f"{path} metadata latent_shape={actual_shape}, expected {expected_shape}")
         latents = payload.get("future_video_latents")
         if latents is None:
             latents = payload.get("latents")
@@ -77,4 +97,6 @@ def load_latents(
         raise TypeError(f"Unsupported latent payload type in {path}: {type(payload)!r}")
     if latents.ndim != 5:
         raise ValueError(f"Expected per-sample latents [V,C,T,H,W], got {tuple(latents.shape)} from {path}")
+    if expected_shape is not None and tuple(int(x) for x in latents.shape) != expected_shape:
+        raise ValueError(f"Expected per-sample latents {expected_shape}, got {tuple(latents.shape)} from {path}")
     return latents
