@@ -62,6 +62,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--exp-name", default=os.environ.get("EXP_NAME", "selected10_worldpilot_wan_pi05_torch"))
     parser.add_argument("--lerobot-repo-id", default=os.environ.get("LEROBOT_REPO_ID", "rlbench/selected10_pi05_waypoint_h1"))
     parser.add_argument("--manifest-path", default=os.environ.get("MANIFEST_PATH"), required=os.environ.get("MANIFEST_PATH") is None)
+    parser.add_argument("--event-manifest-path", default=os.environ.get("EVENT_MANIFEST_PATH"))
+    parser.add_argument("--goal-mode", choices=("event_end", "next_waypoint"), default=os.environ.get("WAN_LATENT_GOAL_MODE", "event_end"))
     parser.add_argument("--sample-index-path", default=os.environ.get("SAMPLE_INDEX_PATH"))
     parser.add_argument("--wan-latent-cache-root", default=os.environ.get("WAN_LATENT_CACHE_ROOT"), required=os.environ.get("WAN_LATENT_CACHE_ROOT") is None)
     parser.add_argument("--split", default=os.environ.get("SPLIT", "train"), choices=("train", "val", "test", "all"))
@@ -244,11 +246,14 @@ def main() -> None:
     if is_main:
         logging.info("Config: %s exp=%s world_size=%d local_batch=%d", config.name, config.exp_name, world_size, local_batch_size)
         logging.info("WAN latent cache: %s", args.wan_latent_cache_root)
+        logging.info("WAN latent goal_mode: %s event_manifest=%s", args.goal_mode, args.event_manifest_path)
         logging.info("Sample index: %s", args.sample_index_path)
 
     loader, data_config = create_wan_latent_loader(
         config,
         manifest_path=args.manifest_path,
+        event_manifest_path=args.event_manifest_path,
+        goal_mode=args.goal_mode,
         sample_index_path=args.sample_index_path,
         latent_cache_root=args.wan_latent_cache_root,
         split=args.split,
@@ -403,4 +408,3 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         cleanup_ddp()
         sys.exit(130)
-

@@ -27,17 +27,17 @@ task                   string
 absolute_rotvec7 = x, y, z, rx, ry, rz, gripper_open
 ```
 
-训练 target 仍然是下一个 full-task heuristic waypoint，`action_horizon=1`。
+动作监督 target 仍然是下一个 full-task heuristic waypoint，`action_horizon=1`。WAN steering latent 的 goal 不是这个 next waypoint，而是当前 sample 所属 event/subgoal 的 end frame。
 
 ## Manifest
 
-默认 manifest 来自 pi0.5 baseline repo：
+默认 action/waypoint manifest 来自 pi0.5 baseline repo：
 
 ```text
 /raid/home/than/zhiyuan/corl2026/rlbench_pi05_waypoint_baseline_20260606/manifests/selected10_fulltask_heuristic_waypoints_train100_val25_test25_from_train450_stratified_20260606.jsonl
 ```
 
-这些字段用于把 LeRobot sample 和原始 RLBench episode/frame 对齐：
+这些字段用于把 LeRobot sample 和原始 RLBench episode/frame/action target 对齐：
 
 ```text
 split
@@ -49,6 +49,19 @@ episode
 task_instruction
 full_task_heuristic_waypoints
 num_frames
+```
+
+event/subgoal manifest 默认来自 selected1500：
+
+```text
+/raid/home/than/zhiyuan/selected1500_dataset/manifests/selected10_event_fullinfo_train100_val25_test25_from_train450_stratified_20260606.jsonl
+```
+
+它提供 `event_keyframes_adjusted` / `event_heuristic_waypoints_by_event`，用于把每个 current frame 映射到当前 event/subgoal end：
+
+```text
+current frame                -> action_target_waypoint_frame = next full-task waypoint
+current frame within event i -> latent_goal_frame = event_keyframes_adjusted[i + 1]
 ```
 
 ## Raw RGB / Low-Dim Roots
@@ -78,6 +91,10 @@ episode:              int
 source_bundle:        str
 frame_index:          int
 target_waypoint_frame:int
+action_target_waypoint_frame:int
+latent_goal_frame:    int
+event_idx:            int
+event_end_frame:      int
 instruction:          str
 latent_layout:        "vcthw"
 ```

@@ -27,6 +27,7 @@ check_path "RGB_ROOT_400" "${RGB_ROOT_400}" || missing=1
 check_path "LOWDIM_ROOT_200" "${LOWDIM_ROOT_200}" || missing=1
 check_path "LOWDIM_ROOT_400" "${LOWDIM_ROOT_400}" || missing=1
 check_path "MANIFEST_PATH" "${MANIFEST_PATH}" || missing=1
+check_path "EVENT_MANIFEST_PATH" "${EVENT_MANIFEST_PATH}" || missing=1
 check_path "WAN_BASE_MODEL" "${WAN_BASE_MODEL}" || missing=1
 
 if [[ -e "${WAN_LATENT_CACHE_ROOT}" ]]; then

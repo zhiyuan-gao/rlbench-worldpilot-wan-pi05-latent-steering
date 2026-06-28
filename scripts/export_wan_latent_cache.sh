@@ -17,6 +17,8 @@ fi
 cd "${OPENPI_DIR}"
 uv run python -m rlbench_worldpilot_wan_pi05.export_wan_latent_cache \
   --manifest-path "${MANIFEST_PATH}" \
+  --event-manifest-path "${EVENT_MANIFEST_PATH}" \
+  --goal-mode "${WAN_LATENT_GOAL_MODE}" \
   --sample-index-path "${SAMPLE_INDEX_PATH}" \
   --out-dir "${WAN_LATENT_CACHE_ROOT}" \
   --split "${SPLIT}" \

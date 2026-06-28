@@ -11,10 +11,11 @@ SAMPLE_INDEX_PATH="${SAMPLE_INDEX_PATH:-${WAN_LATENT_CACHE_ROOT}/sample_index_${
 cd "${OPENPI_DIR}"
 uv run python -m rlbench_worldpilot_wan_pi05.sample_index \
   --manifest-path "${MANIFEST_PATH}" \
+  --event-manifest-path "${EVENT_MANIFEST_PATH}" \
+  --goal-mode "${WAN_LATENT_GOAL_MODE}" \
   --out "${SAMPLE_INDEX_PATH}" \
   --split "${SPLIT}" \
   --sample-every-n "${SAMPLE_EVERY_N:-0}" \
   --rgb-root-200 "${RGB_ROOT_200}" \
   --rgb-root-400 "${RGB_ROOT_400}" \
   "$@"
-

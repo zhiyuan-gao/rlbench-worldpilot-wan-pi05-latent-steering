@@ -113,10 +113,13 @@ repo_id=rlbench/selected10_pi05_waypoint_h1
 ```text
 state/action format: absolute_rotvec7 = x, y, z, rx, ry, rz, gripper_open
 action_horizon:      1
-target:              next full-task heuristic waypoint
+action target:       next full-task heuristic waypoint
+WAN latent target:   current event/subgoal end frame
 views:               front, left_shoulder, right_shoulder
 language:            full-task instruction
 ```
+
+也就是说，动作监督仍然和原版 RLBench pi0.5 waypoint baseline 一致；新增的 WAN steering latent 才看向当前 sample 所属 event 的 end frame。
 
 本 repo 新增的只是 WAN latent cache。建议 cache 以 LeRobot sample / original RLBench frame 对齐，至少包含：
 
@@ -129,6 +132,9 @@ episode
 source_bundle
 frame_index
 target_waypoint_frame
+latent_goal_frame
+event_idx
+event_end_frame
 instruction
 wan_checkpoint_or_run_id
 latent_layout
@@ -196,6 +202,8 @@ export LOWDIM_ROOT_200=${SELECTED1500_DATASET_ROOT}/local200/nonimage_metadata
 export LOWDIM_ROOT_400=${SELECTED1500_DATASET_ROOT}/remote400/nonimage_metadata
 
 export MANIFEST_PATH=${PI05_BASELINE_REPO}/manifests/selected10_fulltask_heuristic_waypoints_train100_val25_test25_from_train450_stratified_20260606.jsonl
+export EVENT_MANIFEST_PATH=${SELECTED1500_DATASET_ROOT}/manifests/selected10_event_fullinfo_train100_val25_test25_from_train450_stratified_20260606.jsonl
+export WAN_LATENT_GOAL_MODE=event_end
 
 export HF_LEROBOT_HOME=${PI05_ROOT}/lerobot_home
 export LEROBOT_REPO_ID=rlbench/selected10_pi05_waypoint_h1
@@ -261,6 +269,7 @@ RGB_ROOT_400
 LOWDIM_ROOT_200
 LOWDIM_ROOT_400
 MANIFEST_PATH
+EVENT_MANIFEST_PATH
 WAN_BASE_MODEL
 LeRobot dataset
 ```
@@ -269,7 +278,12 @@ LeRobot dataset
 
 ### 4. Build Sample Index
 
-sample index 把 pi0.5 LeRobot sample 对齐回原始 RLBench episode/frame/waypoint：
+sample index 把 pi0.5 LeRobot sample 对齐回原始 RLBench episode/frame/waypoint，并为每个 sample 记录两套 target：
+
+```text
+action_target_waypoint_frame = next full-task heuristic waypoint
+latent_goal_frame            = current event/subgoal end frame
+```
 
 ```bash
 SPLIT=train bash scripts/build_sample_index.sh
@@ -399,6 +413,7 @@ OPENPI_DIR                pi0.5 OpenPI repo
 PI05_BASELINE_REPO        original pi0.5 baseline repo
 SELECTED1500_DATASET_ROOT raw selected1500 dataset
 MANIFEST_PATH             waypoint manifest
+EVENT_MANIFEST_PATH       event/subgoal manifest
 HF_LEROBOT_HOME           converted pi0.5 LeRobot data home
 WAN_BASE_MODEL            WAN FLF base model
 WAN_LORA_DIR              trained WAN video-model LoRA
@@ -419,7 +434,7 @@ bash scripts/smoke_fuser_shapes.sh
 
 ## WAN Latent Cache
 
-先构建与 pi0.5 LeRobot samples 对齐的 sample index：
+先构建与 pi0.5 LeRobot samples 对齐的 sample index。默认 `WAN_LATENT_GOAL_MODE=event_end`，所以 action target 仍是 next waypoint，WAN latent goal 是当前 event/subgoal end：
 
 ```bash
 SPLIT=train \
@@ -444,7 +459,7 @@ SPLIT=train \
 bash scripts/export_wan_latent_cache.sh --resume
 ```
 
-`wan-diffusers` backend 会读取当前三视角 RGB 和 target waypoint 三视角 RGB，hstack 后调用 WAN FLF pipeline，并保存 per-sample：
+`wan-diffusers` backend 会读取当前三视角 RGB 和当前 event/subgoal end 的三视角 RGB，hstack 后调用 WAN FLF pipeline，并保存 per-sample：
 
 ```text
 future_video_latents: Tensor[V, C, T_lat, H_lat, W_lat]
@@ -520,7 +535,8 @@ uv run examples/convert_jax_model_to_pytorch.py \
 已实现：
 
 - raw selected1500 path profile
-- LeRobot/sample-index alignment
+- LeRobot/sample-index alignment with unchanged next-waypoint action targets
+- event-end WAN latent goals for current-event/subgoal steering
 - dummy and `wan-diffusers` WAN latent cache export
 - latent cache validation
 - WAN latent dataloader wrapper
@@ -532,4 +548,4 @@ uv run examples/convert_jax_model_to_pytorch.py \
 
 - `wan-diffusers` backend 返回 latent 的实际 shape 是否和 diffusers 版本一致
 - 真实 WAN LoRA 路径和显存配置
-- 完整 online RLBench rollout eval
+- 完整 online RLBench rollout eval，包括 event/subgoal scheduler 和每个 event 内的 WAN latent refresh
