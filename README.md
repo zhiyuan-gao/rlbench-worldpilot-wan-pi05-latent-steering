@@ -8,7 +8,7 @@
 
 - WAN future video latent 的 sample 对齐、导出、缓存和校验。
 - WorldPilot-style `WanFutureVideoFuser`，把 `(V, C, T_lat, H_lat, W_lat)` future latent 变成可注入 pi0.5 的 hidden tokens。
-- PyTorch pi0.5 latent-steering 训练/eval 入口，沿用 RLBench pi0.5 waypoint baseline 的 LeRobot 数据格式和 action target。
+- PyTorch pi0.5 latent-steering 训练和 online RLBench eval 入口，沿用 RLBench pi0.5 waypoint baseline 的 LeRobot 数据格式和 action target。
 
 ## Branch Profile
 
@@ -188,7 +188,19 @@ bash scripts/check_hpc_inputs.sh
 
 ## HPC Step-by-Step
 
-这一节是把 repo 复制到 HPC 后，从路径配置到正式训练的完整顺序。这个 repo 是 sidecar repo：它不重新生成 pi0.5 LeRobot 数据，也不 vendor OpenPI/WAN，只在 pi0.5 baseline 数据旁边新增 WAN future-video latent cache 和 PyTorch latent steering 训练入口。
+这一节是把 repo 复制到 HPC 后，从路径配置到正式训练和 online RLBench eval 的完整顺序。这个 repo 是 sidecar repo：它不重新生成 pi0.5 LeRobot 数据，也不 vendor OpenPI/WAN，只在 pi0.5 baseline 数据旁边新增 WAN future-video latent cache、PyTorch latent steering 训练入口和 online rollout eval 入口。
+
+推荐实际执行顺序：
+
+1. 选择 `main` 或 `hpc-4xh100-nvl` 分支。
+2. 复制并填写 `scripts/hpc_paths.sh`。
+3. 跑 `bash scripts/check_hpc_inputs.sh`。
+4. 为 `train`/`val` 构建 sample index。
+5. 跑 dummy cache smoke 和 train dry-run。
+6. 导出真实 `wan-diffusers` WAN latent cache，并 validate `train`/`val`。
+7. 准备或转换 pi0.5 PyTorch checkpoint。
+8. 训练 PyTorch/DDP latent-steering policy。
+9. 直接跑 online RLBench rollout eval。
 
 ### 0. Select Branch
 
@@ -217,7 +229,7 @@ vim scripts/hpc_paths.sh
 source scripts/hpc_paths.sh
 ```
 
-`scripts/hpc_paths.sh` 已经被 `.gitignore` 忽略，可以写 HPC 的真实路径。所有训练、cache、eval 脚本都会再次 source `scripts/setup_env.sh`；`setup_env.sh` 会保留你已经 export 的变量，所以 `scripts/hpc_paths.sh` 或 Slurm 里的 `export` 会覆盖本机默认路径。
+`scripts/hpc_paths.sh` 已经被 `.gitignore` 忽略，可以写 HPC 的真实路径。所有训练、cache 和 online eval 脚本都会再次 source `scripts/setup_env.sh`；`setup_env.sh` 会保留你已经 export 的变量，所以 `scripts/hpc_paths.sh` 或 Slurm 里的 `export` 会覆盖本机默认路径。
 
 如果不想建 `scripts/hpc_paths.sh`，也可以直接在 Slurm 脚本里写同样的 `export`。至少需要这些路径：
 
@@ -292,9 +304,9 @@ task/variation/episode/frame_xxx.pt
 
 `WAN_OUTPUT_LAYOUT` 是 WAN pipeline 返回 latent 的布局，默认 `bcthw`，即 `[B,C,T,H,W]`。如果 patched pipeline 返回 `[B,T,C,H,W]`，设成 `btchw`。代码会校验 `C=16` 和 expected `T_lat`，layout 写错会直接报错，不会静默交换 channel/time。
 
-`WAN_EXPECTED_BACKEND` 是训练/离线 eval 对 cache 的 backend 校验。正式训练默认应该是 `wan-diffusers`，dummy smoke 时临时设成 `dummy`。
+`WAN_EXPECTED_BACKEND` 是训练和 cache validate 对 cache 的 backend 校验。正式训练默认应该是 `wan-diffusers`，dummy smoke 时临时设成 `dummy`。
 
-`WAN_LATENT_SHAPE` 是训练/离线 eval/validate 对 cache 的 shape 校验，默认 `3,16,6,32,32`，对应 `[V,C,T_lat,H_lat,W_lat]`。
+`WAN_LATENT_SHAPE` 是训练和 validate 对 cache 的 shape 校验，默认 `3,16,6,32,32`，对应 `[V,C,T_lat,H_lat,W_lat]`。Online eval 不读取离线 cache，但会用同一个 shape 初始化 pi0.5 WAN fuser。
 
 如果之前已经用其他 denoise step 数导出过 cache，不要和当前 1-step 实验混用；建议换一个新的 `WAN_LATENT_CACHE_ROOT` 或用 `--overwrite` 重新导出。
 
@@ -315,7 +327,7 @@ H_lat = 256 // 8
 W_lat = 256 // 8
 ```
 
-如果之后改 `--num-frames`、`--height` 或 `--view-width`，dummy cache、validate、train/eval 和 online eval 的 `WAN_LATENT_SHAPE` 也要跟着改。
+如果之后改 `--num-frames`、`--height` 或 `--view-width`，dummy cache、validate、train 和 online eval 的 `WAN_LATENT_SHAPE` 也要跟着改。
 
 ### 3. Check Inputs
 
@@ -479,6 +491,8 @@ bash scripts/train_worldpilot_wan_pi05_torch.sh \
   --lr-schedule.warmup-steps 10000
 ```
 
+训练结束后直接进入 Step 9；本实验的论文结果应使用 online RLBench rollout eval。
+
 最短路径清单：
 
 ```text
@@ -500,7 +514,7 @@ PYTORCH_WEIGHT_PATH       pi0.5 PyTorch checkpoint
 CHECKPOINT_BASE_DIR       output directory for this experiment
 ```
 
-### 9. Online RLBench Rollout Eval
+### 9. Run Online RLBench Rollout Eval
 
 Online eval 不读取预先导出的 WAN latent cache；它会在 RLBench 闭环里实时跑 WAN：
 
@@ -576,7 +590,7 @@ bash scripts/smoke_fuser_shapes.sh
 
 默认 smoke 使用当前 exporter 默认 WAN latent size：`[B, 3, 16, 6, 32, 32]`，对应 `WAN_NUM_FRAMES=21,height=256,view_width=256`。如果改了 WAN 输入分辨率或帧数，需要给 smoke 脚本显式传 `--latent-steps/--height/--width`。
 
-## WAN Latent Cache
+## Quick Reference: WAN Latent Cache
 
 先构建与 pi0.5 LeRobot samples 对齐的 sample index。默认 `WAN_LATENT_GOAL_MODE=event_end`，所以 action target 仍是 next waypoint，WAN latent goal 是当前 event/subgoal end：
 
@@ -622,7 +636,7 @@ SPLIT=train \
 bash scripts/validate_wan_latent_cache.sh
 ```
 
-## Training Entry
+## Quick Reference: Training And Online Eval
 
 训练入口先固定为 PyTorch/DDP：
 
@@ -658,17 +672,7 @@ NPROC_PER_NODE=8 \
 bash scripts/train_worldpilot_wan_pi05_torch.sh --resume
 ```
 
-Offline loss eval 默认也按当前 LeRobot repo 对齐的 split 读取 sample index；如果 `HF_LEROBOT_HOME` 里只有 train split 转换结果，就保持 `SPLIT=train`。如果单独准备了 val LeRobot repo/cache，再显式设 `SPLIT=val`：
-
-```bash
-EXP_NAME=selected10_worldpilot_wan_pi05_torch \
-SPLIT=train \
-bash scripts/eval_worldpilot_wan_pi05_torch.sh \
-  --resume \
-  --num-eval-batches 50
-```
-
-Online RLBench rollout eval：
+训练完成后直接跑 Online RLBench rollout eval：
 
 ```bash
 EXP_NAME=selected10_worldpilot_wan_pi05_torch \
@@ -705,7 +709,6 @@ uv run examples/convert_jax_model_to_pytorch.py \
 - WAN latent dataloader wrapper
 - `PI0WanLatentSteeringPytorch`
 - PyTorch/DDP train, save, resume
-- offline eval loss entry
 - online RLBench rollout eval entry with event/subgoal goal scheduling and per-step WAN latent refresh
 
 仍需要在 HPC 真机上验证：
