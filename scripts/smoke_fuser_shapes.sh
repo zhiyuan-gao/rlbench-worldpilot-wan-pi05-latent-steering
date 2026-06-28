@@ -6,12 +6,10 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 source "${REPO_ROOT}/scripts/setup_env.sh"
 
 DEVICE="${DEVICE:-cpu}"
-TIME_MODE="${WAN_LATENT_TIME_MODE:-all}"
 LAYOUT="${WAN_LATENT_LAYOUT:-bvcthw}"
 
 ARGS=(
   --device "${DEVICE}"
-  --time-mode "${TIME_MODE}"
   --layout "${LAYOUT}"
   "$@"
 )

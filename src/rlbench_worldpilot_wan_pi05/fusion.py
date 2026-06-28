@@ -8,7 +8,6 @@ from torch import nn
 
 
 LatentLayout = Literal["bvcthw", "bvtchw", "bcthw", "btchw"]
-TimeMode = Literal["all", "last", "mean"]
 
 
 @dataclass(frozen=True)
@@ -32,14 +31,10 @@ class WanFutureVideoFuser(nn.Module):
         num_heads: int = 8,
         max_views: int = 8,
         max_latent_steps: int = 64,
-        time_mode: TimeMode = "all",
         dropout: float = 0.0,
     ) -> None:
         super().__init__()
-        if time_mode not in {"all", "last", "mean"}:
-            raise ValueError(f"Unsupported time_mode: {time_mode}")
         self.hidden_dim = hidden_dim
-        self.time_mode = time_mode
         self.projector = nn.LazyLinear(hidden_dim)
         self.view_embed = nn.Embedding(max_views, hidden_dim)
         self.time_embed = nn.Embedding(max_latent_steps, hidden_dim)
@@ -112,20 +107,11 @@ class WanFutureVideoFuser(nn.Module):
                 f"latent_steps={latent_steps} exceeds max_latent_steps={self.time_embed.num_embeddings}"
             )
 
-        if self.time_mode == "all":
-            tokens = latents.permute(0, 1, 3, 2, 4, 5).reshape(
-                bsz, num_views * latent_steps, channels * height * width
-            )
-            view_ids = torch.arange(num_views, device=device).repeat_interleave(latent_steps)
-            time_ids = torch.arange(latent_steps, device=device).repeat(num_views)
-        elif self.time_mode == "last":
-            tokens = latents[:, :, :, -1].reshape(bsz, num_views, channels * height * width)
-            view_ids = torch.arange(num_views, device=device)
-            time_ids = torch.full((num_views,), latent_steps - 1, device=device, dtype=torch.long)
-        else:
-            tokens = latents.mean(dim=3).reshape(bsz, num_views, channels * height * width)
-            view_ids = torch.arange(num_views, device=device)
-            time_ids = torch.zeros(num_views, device=device, dtype=torch.long)
+        tokens = latents.permute(0, 1, 3, 2, 4, 5).reshape(
+            bsz, num_views * latent_steps, channels * height * width
+        )
+        view_ids = torch.arange(num_views, device=device).repeat_interleave(latent_steps)
+        time_ids = torch.arange(latent_steps, device=device).repeat(num_views)
 
         view_ids = view_ids[None].expand(bsz, -1)
         time_ids = time_ids[None].expand(bsz, -1)

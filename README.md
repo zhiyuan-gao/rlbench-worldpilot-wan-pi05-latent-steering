@@ -55,17 +55,13 @@ WAN VAE-before-decode future video latent:
 
 WorldPilot-style WAN fuser:
   (B, V, C, T_lat, H_lat, W_lat)
-  -> select/preserve latent time
-  -> (B, V * K, C * H_lat * W_lat)
+  -> preserve all latent-time positions
+  -> (B, V * T_lat, C * H_lat * W_lat)
   -> Linear(..., H_pi05)
   -> cross-attn into pi0.5 VLM hidden states
 ```
 
-默认研究路线先用 `time_mode=all`，也就是保留 WAN latent-time 维度，把每个 `(view, latent_time)` 作为一个 future-scene token。后续可以做 ablation：
-
-- `all`: 保留所有 latent time tokens，最接近 future-video latent steering。
-- `last`: 每个 view 只取最后一个 latent time token，更接近“目标/终点 latent”。
-- `mean`: 对 latent time 做平均，token 数更少但信息压缩更强。
+本 repo 固定保留 WAN latent-time 维度，把每个 `(view, latent_time)` 作为一个 future-scene token。
 
 这个 repo 不使用 Wan transformer block13 hidden tokens；Latent Steering 对齐的是 **VAE-before-decode future video latent**。
 
