@@ -82,7 +82,6 @@ class WanPi05OnlinePolicy:
         wan_latent_shape: tuple[int, int, int, int, int],
         device: str = "cuda",
         precision: str | None = None,
-        wan_time_mode: str = "all",
         wan_num_heads: int = 8,
         wan_dropout: float = 0.0,
         action_num_steps: int = 10,
@@ -107,7 +106,6 @@ class WanPi05OnlinePolicy:
 
         self.model = PI0WanLatentSteeringPytorch(
             self.config.model,
-            wan_time_mode=wan_time_mode,
             wan_num_heads=wan_num_heads,
             wan_dropout=wan_dropout,
         ).to(self.device)

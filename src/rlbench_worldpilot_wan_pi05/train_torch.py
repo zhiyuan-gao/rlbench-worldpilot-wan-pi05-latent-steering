@@ -84,7 +84,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--lr-schedule.decay-steps", dest="decay_steps", type=int, default=None)
     parser.add_argument("--lr-schedule.decay-lr", dest="decay_lr", type=float, default=None)
     parser.add_argument("--pytorch-training-precision", choices=("bfloat16", "float32"), default=os.environ.get("PYTORCH_TRAINING_PRECISION"))
-    parser.add_argument("--time-mode", choices=("all", "last", "mean"), default=os.environ.get("WAN_LATENT_TIME_MODE", "all"))
     parser.add_argument("--wan-num-heads", type=int, default=int(os.environ.get("WAN_FUSER_NUM_HEADS", "8")))
     parser.add_argument("--wan-dropout", type=float, default=float(os.environ.get("WAN_FUSER_DROPOUT", "0.0")))
     parser.add_argument("--expected-wan-num-inference-steps", type=int, default=None)
@@ -294,7 +293,6 @@ def main() -> None:
 
     model = PI0WanLatentSteeringPytorch(
         config.model,
-        wan_time_mode=args.time_mode,
         wan_num_heads=args.wan_num_heads,
         wan_dropout=args.wan_dropout,
     ).to(device)

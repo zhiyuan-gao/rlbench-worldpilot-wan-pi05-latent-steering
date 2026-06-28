@@ -44,7 +44,7 @@ preserve T_lat:
   -> (B, V * T_lat, H_pi05)
 ```
 
-这避免一开始就只取最后 latent step，也避免把整段未来视频平均成一个 token。`last` 和 `mean` 应作为 ablation，而不是默认假设。
+本 repo 固定保留全部 latent-time positions，把每个 `(view, latent_time)` 作为一个 future-scene token。
 
 ## Non-Goals
 
@@ -52,4 +52,3 @@ preserve T_lat:
 - 不把 RGB decoded future video 输入 action policy。
 - 不重新定义 pi0.5 action target。
 - 不让 WorldPilot repo 成为主训练工程。
-

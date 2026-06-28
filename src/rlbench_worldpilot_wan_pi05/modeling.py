@@ -16,7 +16,6 @@ class PI0WanLatentSteeringPytorch(PI0Pytorch):
         self,
         config,
         *,
-        wan_time_mode: str = "all",
         wan_num_heads: int = 8,
         wan_dropout: float = 0.0,
     ) -> None:
@@ -25,7 +24,6 @@ class PI0WanLatentSteeringPytorch(PI0Pytorch):
         self.wan_fuser = WanFutureVideoFuser(
             hidden_dim=hidden_dim,
             num_heads=wan_num_heads,
-            time_mode=wan_time_mode,
             dropout=wan_dropout,
         )
 

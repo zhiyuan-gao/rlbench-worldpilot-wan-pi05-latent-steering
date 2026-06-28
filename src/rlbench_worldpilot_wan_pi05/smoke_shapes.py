@@ -18,7 +18,6 @@ def main() -> None:
     parser.add_argument("--height", type=int, default=32)
     parser.add_argument("--width", type=int, default=32)
     parser.add_argument("--num-heads", type=int, default=8)
-    parser.add_argument("--time-mode", choices=["all", "last", "mean"], default="all")
     parser.add_argument("--layout", choices=["bvcthw", "bvtchw", "bcthw", "btchw"], default="bvcthw")
     parser.add_argument("--device", default="cpu")
     args = parser.parse_args()
@@ -68,13 +67,12 @@ def main() -> None:
     fuser = WanFutureVideoFuser(
         hidden_dim=args.hidden_dim,
         num_heads=args.num_heads,
-        time_mode=args.time_mode,
     ).to(device)
     output = fuser(vlm_hidden, latents, latent_layout=args.layout)
 
     print(f"vlm_hidden:    {tuple(vlm_hidden.shape)}")
     print(f"wan_latents:   {tuple(latents.shape)} layout={args.layout}")
-    print(f"latent_tokens: {tuple(output.latent_tokens.shape)} time_mode={args.time_mode}")
+    print(f"latent_tokens: {tuple(output.latent_tokens.shape)}")
     print(f"fused_hidden:  {tuple(output.hidden_states.shape)}")
 
 

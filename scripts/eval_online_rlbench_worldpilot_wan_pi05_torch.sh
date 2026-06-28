@@ -11,7 +11,6 @@ CONFIG_NAME="${CONFIG_NAME:-pi05_rlbench_waypoint_h1}"
 EXP_NAME="${EXP_NAME:-selected10_worldpilot_wan_pi05_torch}"
 SPLIT="${SPLIT:-val}"
 WAN_LATENT_BACKEND="${WAN_LATENT_BACKEND:-wan-diffusers}"
-WAN_LATENT_TIME_MODE="${WAN_LATENT_TIME_MODE:-all}"
 CHECKPOINT_BASE_DIR="${CHECKPOINT_BASE_DIR:-./checkpoints}"
 ASSETS_BASE_DIR="${ASSETS_BASE_DIR:-./assets}"
 ONLINE_EVAL_OUT="${ONLINE_EVAL_OUT:-${REPO_ROOT}/online_eval/${EXP_NAME}_${SPLIT}.jsonl}"
@@ -53,6 +52,5 @@ uv run python -m rlbench_worldpilot_wan_pi05.eval_online_rlbench \
   --wan-base-model "${WAN_BASE_MODEL}" \
   --wan-output-layout "${WAN_OUTPUT_LAYOUT:-bcthw}" \
   --wan-num-inference-steps "${WAN_NUM_INFERENCE_STEPS}" \
-  --wan-latent-time-mode "${WAN_LATENT_TIME_MODE}" \
   "${EXTRA_ARGS[@]}" \
   "$@"
