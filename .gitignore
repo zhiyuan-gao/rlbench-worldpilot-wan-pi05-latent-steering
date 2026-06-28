@@ -15,4 +15,4 @@ latent_cache/
 *.pth
 *.safetensors
 *.log
-
+scripts/hpc_paths.sh

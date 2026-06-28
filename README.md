@@ -212,7 +212,18 @@ git checkout hpc-4xh100-nvl
 
 ### 1. Configure Required Paths
 
-建议在 Slurm 脚本里用 `export` 覆盖路径，而不是反复改源码。至少需要这些路径：
+HPC 上不要改源码里的默认路径。推荐复制路径模板，然后只改这个本地文件：
+
+```bash
+cd ${REPO_ROOT}
+cp scripts/hpc_paths_example.sh scripts/hpc_paths.sh
+vim scripts/hpc_paths.sh
+source scripts/hpc_paths.sh
+```
+
+`scripts/hpc_paths.sh` 已经被 `.gitignore` 忽略，可以写 HPC 的真实路径。所有训练、cache、eval 脚本都会再次 source `scripts/setup_env.sh`；`setup_env.sh` 会保留你已经 export 的变量，所以 `scripts/hpc_paths.sh` 或 Slurm 里的 `export` 会覆盖本机默认路径。
+
+如果不想建 `scripts/hpc_paths.sh`，也可以直接在 Slurm 脚本里写同样的 `export`。至少需要这些路径：
 
 ```bash
 export REPO_ROOT=/path/to/rlbench_worldpilot_wan_pi05_latent_steering_20260628
@@ -242,6 +253,15 @@ ${HF_LEROBOT_HOME}/rlbench/selected10_pi05_waypoint_h1/meta/info.json
 ```
 
 如果这个文件不存在，需要先回到 `rlbench_pi05_waypoint_baseline_20260606` 按 baseline 流程生成 LeRobot dataset。
+
+改完路径后先跑：
+
+```bash
+source scripts/hpc_paths.sh
+bash scripts/check_hpc_inputs.sh
+```
+
+它会检查 OpenPI、baseline repo、selected1500 raw RGB/lowdim、manifest、WAN base model 和 LeRobot dataset 是否能找到。
 
 ### 2. Configure WAN Latent Cache Paths
 
