@@ -209,26 +209,53 @@ python3 -m pip install --user uv
 
 ### Install 1. Choose Local Paths
 
-建议先定好所有路径，后续脚本都复用这些变量：
+推荐在 HPC 上只改一个主目录 `HPC_ROOT`，其他 repo、cache、checkpoint 和输出目录都从它派生。下面的 `mkdir -p` 会自动创建工作目录、cache 目录、checkpoint 目录和日志目录。
 
 ```bash
-export WORK_ROOT=/scratch/$USER/rlbench_worldpilot_wan_pi05
-export REPO_ROOT=${WORK_ROOT}/rlbench_worldpilot_wan_pi05_latent_steering_20260628
-export PI05_BASELINE_REPO=${WORK_ROOT}/rlbench_pi05_waypoint_baseline_20260606
-export PI05_ROOT=${WORK_ROOT}/pi05_baseline
+export HPC_ROOT=/scratch/$USER/rlbench_worldpilot_wan_pi05
 
-export SELECTED1500_DATASET_ROOT=/path/to/selected1500_dataset
-export WAN_BASE_MODEL=/path/to/Wan2.1-FLF2V-14B-720P-diffusers
-export WAN_LORA_DIR=/path/to/trained_wan_lora
-export WAN_LATENT_CACHE_ROOT=/scratch/$USER/selected10_worldpilot_wan_latent_cache
+export REPO_ROOT=${HPC_ROOT}/repos/rlbench_worldpilot_wan_pi05_latent_steering_20260628
+export PI05_BASELINE_REPO=${HPC_ROOT}/repos/rlbench_pi05_waypoint_baseline_20260606
+export PI05_ROOT=${HPC_ROOT}/pi05_baseline
 
-export CHECKPOINT_BASE_DIR=/scratch/$USER/worldpilot_wan_pi05_checkpoints
-export ASSETS_BASE_DIR=/scratch/$USER/worldpilot_wan_pi05_assets
-export WANDB_DIR=/scratch/$USER/wandb
-mkdir -p "${WORK_ROOT}" "${WAN_LATENT_CACHE_ROOT}" "${CHECKPOINT_BASE_DIR}" "${ASSETS_BASE_DIR}" "${WANDB_DIR}"
+export SELECTED1500_DATASET_ROOT=${HPC_ROOT}/data/selected1500_dataset
+export WAN_BASE_MODEL=${HPC_ROOT}/models/Wan-AI/Wan2.1-FLF2V-14B-720P-diffusers
+export WAN_LORA_DIR=${HPC_ROOT}/models/wan_lora
+export PYTORCH_WEIGHT_PATH=${HPC_ROOT}/checkpoints/pi05_pytorch_checkpoint
+
+export WAN_LATENT_CACHE_ROOT=${HPC_ROOT}/cache/selected10_worldpilot_wan_latent_cache
+export CHECKPOINT_BASE_DIR=${HPC_ROOT}/checkpoints/worldpilot_wan_pi05_checkpoints
+export ASSETS_BASE_DIR=${HPC_ROOT}/assets/worldpilot_wan_pi05_assets
+export WANDB_DIR=${HPC_ROOT}/wandb
+
+mkdir -p \
+  "${HPC_ROOT}/repos" \
+  "${HPC_ROOT}/data" \
+  "${HPC_ROOT}/models" \
+  "${HPC_ROOT}/sim" \
+  "${WAN_LATENT_CACHE_ROOT}" \
+  "${CHECKPOINT_BASE_DIR}" \
+  "${ASSETS_BASE_DIR}" \
+  "${WANDB_DIR}"
 ```
 
-如果这些目录已经存在，可以跳过创建目录，只要路径变量指向已有位置即可。
+如果你把 raw dataset、WAN base model、WAN LoRA 或 pi0.5 checkpoint 放在别的共享盘上，只覆盖对应变量即可，不需要改其他派生路径：
+
+```bash
+export SELECTED1500_DATASET_ROOT=/shared/path/selected1500_dataset
+export WAN_BASE_MODEL=/shared/path/Wan2.1-FLF2V-14B-720P-diffusers
+export WAN_LORA_DIR=/shared/path/trained_wan_lora
+export PYTORCH_WEIGHT_PATH=/shared/path/pi05_pytorch_checkpoint
+```
+
+注意：`mkdir -p` 只能自动创建空目录，不能自动生成数据内容。下面这些是输入资源，必须已经上传、下载或由前面步骤生成：
+
+```text
+${SELECTED1500_DATASET_ROOT}
+${WAN_BASE_MODEL}
+${WAN_LORA_DIR}              # 如果只做 dummy smoke，可以留空
+${PYTORCH_WEIGHT_PATH}       # 如果还没有，Install 6 会从 JAX checkpoint 转换生成
+```
 
 ### Install 2. Clone And Install This Repo
 
