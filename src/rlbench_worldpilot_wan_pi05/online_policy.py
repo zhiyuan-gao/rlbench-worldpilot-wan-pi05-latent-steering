@@ -84,6 +84,9 @@ class WanPi05OnlinePolicy:
         precision: str | None = None,
         wan_num_heads: int = 8,
         wan_dropout: float = 0.0,
+        wan_steering_mode: str = "early",
+        wan_steering_block: int = 12,
+        wan_steering_gate: str = "auto",
         action_num_steps: int = 10,
     ) -> None:
         self.device = torch.device(device if torch.cuda.is_available() or not device.startswith("cuda") else "cpu")
@@ -108,6 +111,9 @@ class WanPi05OnlinePolicy:
             self.config.model,
             wan_num_heads=wan_num_heads,
             wan_dropout=wan_dropout,
+            wan_steering_mode=wan_steering_mode,
+            wan_steering_block=wan_steering_block,
+            wan_steering_gate=wan_steering_gate,
         ).to(self.device)
         init_dtype = torch.bfloat16 if self.config.pytorch_training_precision == "bfloat16" else torch.float32
         dummy_latents = torch.zeros((1, *wan_latent_shape), dtype=init_dtype, device=self.device)

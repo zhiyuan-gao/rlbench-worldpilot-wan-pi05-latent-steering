@@ -47,6 +47,9 @@ COMMON_ARGS=(
   --expected-wan-num-inference-steps "${WAN_NUM_INFERENCE_STEPS}"
   --expected-wan-backend "${WAN_EXPECTED_BACKEND}"
   --expected-wan-latent-shape "${WAN_LATENT_SHAPE}"
+  --wan-steering-mode "${WAN_STEERING_MODE}"
+  --wan-steering-block "${WAN_STEERING_BLOCK}"
+  --wan-steering-gate "${WAN_STEERING_GATE}"
 )
 if [[ -n "${PYTORCH_WEIGHT_PATH:-}" ]]; then
   COMMON_ARGS+=(--pytorch-weight-path "${PYTORCH_WEIGHT_PATH}")

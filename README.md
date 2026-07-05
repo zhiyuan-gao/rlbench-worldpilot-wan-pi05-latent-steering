@@ -10,26 +10,17 @@
 - WorldPilot-style `WanFutureVideoFuser`，把 `(V, C, T_lat, H_lat, W_lat)` future latent 变成可注入 pi0.5 的 hidden tokens。
 - PyTorch pi0.5 latent-steering 训练和 online RLBench eval 入口，沿用 RLBench pi0.5 waypoint baseline 的 LeRobot 数据格式和 action target。
 
-## Branch Profile
+## Runtime Profile
 
 当前 `main` 分支对应 **8x A100 40GB** 配置。
 
 ```text
-branch             main
 trainer            PyTorch / DDP
 default GPUs       8x A100 40GB
 NPROC_PER_NODE     8
 pi0.5 baseline     rlbench_pi05_waypoint_baseline_20260606 main branch
 dataset format     same LeRobot dataset as pi0.5 waypoint baseline
 ```
-
-另一个分支应保持为：
-
-```text
-hpc-4xh100-nvl     4x H100 NVL 94GB, NPROC_PER_NODE=4
-```
-
-两条分支只应该在 HPC profile、默认 GPU 数、显存建议和 README 示例上不同；数据格式和方法代码保持一致。
 
 ## Method Contract
 
@@ -64,6 +55,32 @@ WorldPilot-style WAN fuser:
 本 repo 固定保留 WAN latent-time 维度，把每个 `(view, latent_time)` 作为一个 future-scene token。
 
 这个 repo 不使用 Wan transformer block13 hidden tokens；Latent Steering 对齐的是 **VAE-before-decode future video latent**。
+
+### Steering Injection Modes
+
+当前 `main` 分支保留两种 WAN latent injection 入口：
+
+```text
+early:
+  保持原始方法不变。
+  pi0.5 embed_prefix(images, text) 后立刻用 WanFutureVideoFuser 做 residual cross-attn，
+  然后再进入原版 PaliGemma/Gemma transformer 和 action head。
+
+block:
+  新增的 block12-style 方法。
+  先让 pi0.5 的 prefix/suffix joint transformer 正常跑到指定层，
+  再只对 prefix stream 注入 WAN residual，后续 transformer blocks 和 action head 继续使用被 steering 后的 hidden states。
+```
+
+默认仍然是：
+
+```bash
+export WAN_STEERING_MODE=early
+export WAN_STEERING_BLOCK=12
+export WAN_STEERING_GATE=auto
+```
+
+`WAN_STEERING_MODE=early` 不使用 residual gate，和之前方法保持一致。`WAN_STEERING_MODE=block` 默认在第 12 个 PaliGemma/Gemma block 后注入，并使用 zero-init residual gate；gated block mode 不额外加 post-norm，所以初始时等价于原版 pi0.5 hidden states，再通过训练学会使用 WAN future latent。
 
 ## Current Experiment Semantics
 
@@ -192,8 +209,8 @@ bash scripts/check_hpc_inputs.sh
 
 推荐实际执行顺序：
 
-1. 选择 `main` 或 `hpc-4xh100-nvl` 分支。
-2. 复制并填写 `scripts/hpc_paths.sh`。
+1. 复制并填写 `scripts/hpc_paths.sh`。
+2. 配置 WAN latent cache 路径和 WAN 模型路径。
 3. 跑 `bash scripts/check_hpc_inputs.sh`。
 4. 为 `train`/`val` 构建 sample index。
 5. 跑 dummy cache smoke 和 train dry-run。
@@ -201,22 +218,6 @@ bash scripts/check_hpc_inputs.sh
 7. 准备或转换 pi0.5 PyTorch checkpoint。
 8. 训练 PyTorch/DDP latent-steering policy。
 9. 直接跑 online RLBench rollout eval。
-
-### 0. Select Branch
-
-8x A100 机器使用：
-
-```bash
-cd /path/to/rlbench_worldpilot_wan_pi05_latent_steering_20260628
-git checkout main
-```
-
-4x H100 NVL 机器使用：
-
-```bash
-cd /path/to/rlbench_worldpilot_wan_pi05_latent_steering_20260628
-git checkout hpc-4xh100-nvl
-```
 
 ### 1. Configure Required Paths
 
@@ -249,6 +250,9 @@ export LOWDIM_ROOT_400=${SELECTED1500_DATASET_ROOT}/remote400/nonimage_metadata
 export MANIFEST_PATH=${PI05_BASELINE_REPO}/manifests/selected10_fulltask_heuristic_waypoints_train100_val25_test25_from_train450_stratified_20260606.jsonl
 export EVENT_MANIFEST_PATH=${SELECTED1500_DATASET_ROOT}/manifests/selected10_event_fullinfo_train100_val25_test25_from_train450_stratified_20260606.jsonl
 export WAN_LATENT_GOAL_MODE=event_end
+export WAN_STEERING_MODE=early
+export WAN_STEERING_BLOCK=12
+export WAN_STEERING_GATE=auto
 
 export HF_LEROBOT_HOME=${PI05_ROOT}/lerobot_home
 export LEROBOT_REPO_ID=rlbench/selected10_pi05_waypoint_h1
@@ -398,15 +402,13 @@ export PYTORCH_WEIGHT_PATH=/path/to/pi05_pytorch_checkpoint
 SPLIT=train \
 WAN_NUM_INFERENCE_STEPS=1 \
 WAN_EXPECTED_BACKEND=dummy \
-NPROC_PER_NODE=4 \
+NPROC_PER_NODE=8 \
 bash scripts/train_worldpilot_wan_pi05_torch.sh \
   --dry-run \
   --allow-missing-latents \
   --batch-size 4 \
   --no-wandb-enabled
 ```
-
-8x A100 分支把 `NPROC_PER_NODE` 改成 `8`。
 
 `--dry-run` 不启动训练，也不加载 pi0.5 base weights；它用于检查 transformed LeRobot dataset、sample index、latent cache batch 和 split/step 配置。fuser shape 单测仍然用 `bash scripts/smoke_fuser_shapes.sh`。
 
@@ -461,7 +463,7 @@ uv run examples/convert_jax_model_to_pytorch.py \
 
 ### 8. Train
 
-4x H100 NVL:
+8x A100:
 
 ```bash
 cd ${REPO_ROOT}
@@ -470,18 +472,6 @@ export EXP_NAME=selected10_worldpilot_wan_pi05_torch
 export CHECKPOINT_BASE_DIR=/scratch/path/worldpilot_wan_pi05_checkpoints
 export WANDB_DIR=/scratch/path/wandb
 
-NPROC_PER_NODE=4 \
-bash scripts/train_worldpilot_wan_pi05_torch.sh \
-  --batch-size 128 \
-  --num-train-steps 20000 \
-  --save-interval 2000 \
-  --keep-period 2000 \
-  --lr-schedule.warmup-steps 10000
-```
-
-8x A100:
-
-```bash
 NPROC_PER_NODE=8 \
 bash scripts/train_worldpilot_wan_pi05_torch.sh \
   --batch-size 128 \
@@ -490,6 +480,25 @@ bash scripts/train_worldpilot_wan_pi05_torch.sh \
   --keep-period 2000 \
   --lr-schedule.warmup-steps 10000
 ```
+
+默认训练的是原始 early injection 方法。如果要跑 block12-style injection，只需要在同一套数据和 WAN cache 上换实验名并设置 steering mode：
+
+```bash
+export EXP_NAME=selected10_worldpilot_wan_pi05_block12_torch
+export WAN_STEERING_MODE=block
+export WAN_STEERING_BLOCK=12
+export WAN_STEERING_GATE=auto
+
+NPROC_PER_NODE=8 \
+bash scripts/train_worldpilot_wan_pi05_torch.sh \
+  --batch-size 128 \
+  --num-train-steps 20000 \
+  --save-interval 2000 \
+  --keep-period 2000 \
+  --lr-schedule.warmup-steps 10000
+```
+
+block mode 的 online/action sampling 会在每个 denoise step 重新跑带 block12 steering 的 joint forward，不复用 early mode 的 prefix KV cache，所以它会比 early mode 慢一些；训练和 online eval 的注入位置保持一致。
 
 训练结束后直接进入 Step 9；本实验的论文结果应使用 online RLBench rollout eval。
 
@@ -510,6 +519,9 @@ WAN_NUM_INFERENCE_STEPS   default 1 for 1-step denoise WAN latent
 WAN_OUTPUT_LAYOUT         bcthw for [B,C,T,H,W], btchw for [B,T,C,H,W]
 WAN_LATENT_SHAPE          expected [V,C,T_lat,H_lat,W_lat], default 3,16,6,32,32
 WAN_EXPECTED_BACKEND      wan-diffusers for real training, dummy for dummy smoke
+WAN_STEERING_MODE         early for original method, block for block12-style injection
+WAN_STEERING_BLOCK        default 12
+WAN_STEERING_GATE         auto: no gate for early, zero-init gate for block
 PYTORCH_WEIGHT_PATH       pi0.5 PyTorch checkpoint
 CHECKPOINT_BASE_DIR       output directory for this experiment
 ```
@@ -649,12 +661,30 @@ NPROC_PER_NODE=8 \
 bash scripts/train_worldpilot_wan_pi05_torch.sh --dry-run
 ```
 
-`--dry-run` 会构建 OpenPI transformed LeRobot dataset、sample index 和 WAN latent batch，但不启动训练。正式训练去掉 `--dry-run`：
+`--dry-run` 会构建 OpenPI transformed LeRobot dataset、sample index 和 WAN latent batch，但不启动训练。默认 `WAN_STEERING_MODE=early` 会保持原始方法；如果要跑 block12 方法，把 `WAN_STEERING_MODE=block WAN_STEERING_BLOCK=12` 加到 dry-run、train 和 online eval 的环境变量里。正式训练去掉 `--dry-run`：
 
 ```bash
 PI05_ROOT=/raid/home/than/zhiyuan/corl2026/pi05_baseline \
 PYTORCH_WEIGHT_PATH=/path/to/pytorch/pi05_base \
 EXP_NAME=selected10_worldpilot_wan_pi05_torch \
+NPROC_PER_NODE=8 \
+bash scripts/train_worldpilot_wan_pi05_torch.sh \
+  --batch-size 128 \
+  --num-train-steps 20000 \
+  --save-interval 2000 \
+  --keep-period 2000 \
+  --lr-schedule.warmup-steps 10000
+```
+
+block12 方法示例：
+
+```bash
+PI05_ROOT=/raid/home/than/zhiyuan/corl2026/pi05_baseline \
+PYTORCH_WEIGHT_PATH=/path/to/pytorch/pi05_base \
+EXP_NAME=selected10_worldpilot_wan_pi05_block12_torch \
+WAN_STEERING_MODE=block \
+WAN_STEERING_BLOCK=12 \
+WAN_STEERING_GATE=auto \
 NPROC_PER_NODE=8 \
 bash scripts/train_worldpilot_wan_pi05_torch.sh \
   --batch-size 128 \
@@ -685,7 +715,7 @@ bash scripts/eval_online_rlbench_worldpilot_wan_pi05_torch.sh \
   --max-episodes-per-task 25
 ```
 
-训练脚本现在会实例化 `PI0WanLatentSteeringPytorch`，在 OpenPI PyTorch pi0.5 的 `embed_prefix()` 后注入 `WanFutureVideoFuser`，然后保持 action head、action target、state/action format 不变。
+训练脚本现在会实例化 `PI0WanLatentSteeringPytorch`。`early` 模式在 OpenPI PyTorch pi0.5 的 `embed_prefix()` 后注入 `WanFutureVideoFuser`；`block` 模式在指定 transformer block 后注入 prefix-stream residual。两种模式都保持 action head、action target、state/action format 不变。
 
 如果只有 JAX pi0.5 checkpoint，需要先在 OpenPI 里转换为 PyTorch 权重：
 
@@ -708,6 +738,7 @@ uv run examples/convert_jax_model_to_pytorch.py \
 - latent cache validation
 - WAN latent dataloader wrapper
 - `PI0WanLatentSteeringPytorch`
+- early injection and block12-style injection modes
 - PyTorch/DDP train, save, resume
 - online RLBench rollout eval entry with event/subgoal goal scheduling and per-step WAN latent refresh
 

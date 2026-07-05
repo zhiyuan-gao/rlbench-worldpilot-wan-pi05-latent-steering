@@ -52,5 +52,8 @@ uv run python -m rlbench_worldpilot_wan_pi05.eval_online_rlbench \
   --wan-base-model "${WAN_BASE_MODEL}" \
   --wan-output-layout "${WAN_OUTPUT_LAYOUT:-bcthw}" \
   --wan-num-inference-steps "${WAN_NUM_INFERENCE_STEPS}" \
+  --wan-steering-mode "${WAN_STEERING_MODE}" \
+  --wan-steering-block "${WAN_STEERING_BLOCK}" \
+  --wan-steering-gate "${WAN_STEERING_GATE}" \
   "${EXTRA_ARGS[@]}" \
   "$@"

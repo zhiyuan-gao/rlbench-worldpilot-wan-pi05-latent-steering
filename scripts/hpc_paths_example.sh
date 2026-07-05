@@ -36,6 +36,9 @@ export WAN_NUM_INFERENCE_STEPS=1
 export WAN_OUTPUT_LAYOUT=bcthw
 export WAN_LATENT_SHAPE=3,16,6,32,32
 export WAN_EXPECTED_BACKEND=wan-diffusers
+export WAN_STEERING_MODE=early   # early or block
+export WAN_STEERING_BLOCK=12
+export WAN_STEERING_GATE=auto
 
 # PyTorch pi0.5 checkpoint and outputs.
 export PYTORCH_WEIGHT_PATH=/path/to/pi05_pytorch_checkpoint

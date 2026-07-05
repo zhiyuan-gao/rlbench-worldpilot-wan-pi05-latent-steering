@@ -60,6 +60,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--wan-latent-shape", default=os.environ.get("WAN_LATENT_SHAPE", "3,16,6,32,32"))
     parser.add_argument("--wan-fuser-num-heads", type=int, default=int(os.environ.get("WAN_FUSER_NUM_HEADS", "8")))
     parser.add_argument("--wan-fuser-dropout", type=float, default=float(os.environ.get("WAN_FUSER_DROPOUT", "0.0")))
+    parser.add_argument("--wan-steering-mode", choices=("early", "block"), default=os.environ.get("WAN_STEERING_MODE", "early"))
+    parser.add_argument("--wan-steering-block", type=int, default=int(os.environ.get("WAN_STEERING_BLOCK", "12")))
+    parser.add_argument("--wan-steering-gate", choices=("auto", "on", "off"), default=os.environ.get("WAN_STEERING_GATE", "auto"))
     parser.add_argument("--action-num-steps", type=int, default=10)
 
     parser.add_argument("--wan-backend", choices=("dummy", "wan-diffusers"), default=os.environ.get("WAN_LATENT_BACKEND", "dummy"))
@@ -369,6 +372,9 @@ def main() -> None:
         precision=args.pytorch_training_precision,
         wan_num_heads=args.wan_fuser_num_heads,
         wan_dropout=args.wan_fuser_dropout,
+        wan_steering_mode=args.wan_steering_mode,
+        wan_steering_block=args.wan_steering_block,
+        wan_steering_gate=args.wan_steering_gate,
         action_num_steps=args.action_num_steps,
     )
     wan_provider = make_wan_provider(args)
@@ -406,6 +412,9 @@ def main() -> None:
                     "task_instruction": row.get("task_instruction"),
                     "wan_backend": args.wan_backend,
                     "wan_num_inference_steps": int(args.wan_num_inference_steps),
+                    "wan_steering_mode": args.wan_steering_mode,
+                    "wan_steering_block": int(args.wan_steering_block),
+                    "wan_steering_gate": args.wan_steering_gate,
                     "policy_checkpoint": policy.checkpoint_dir.as_posix(),
                 }
                 try:

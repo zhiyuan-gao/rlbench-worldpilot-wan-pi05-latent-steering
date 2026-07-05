@@ -87,6 +87,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--pytorch-training-precision", choices=("bfloat16", "float32"), default=os.environ.get("PYTORCH_TRAINING_PRECISION"))
     parser.add_argument("--wan-num-heads", type=int, default=int(os.environ.get("WAN_FUSER_NUM_HEADS", "8")))
     parser.add_argument("--wan-dropout", type=float, default=float(os.environ.get("WAN_FUSER_DROPOUT", "0.0")))
+    parser.add_argument("--wan-steering-mode", choices=("early", "block"), default=os.environ.get("WAN_STEERING_MODE", "early"))
+    parser.add_argument("--wan-steering-block", type=int, default=int(os.environ.get("WAN_STEERING_BLOCK", "12")))
+    parser.add_argument("--wan-steering-gate", choices=("auto", "on", "off"), default=os.environ.get("WAN_STEERING_GATE", "auto"))
     parser.add_argument("--expected-wan-num-inference-steps", type=int, default=None)
     parser.add_argument("--expected-wan-backend", default=os.environ.get("WAN_EXPECTED_BACKEND"))
     parser.add_argument("--expected-wan-latent-shape", default=os.environ.get("WAN_LATENT_SHAPE", "3,16,6,32,32"))
@@ -286,6 +289,9 @@ def main() -> None:
                     "exp_name": config.exp_name,
                     "actions_shape": list(actions.shape),
                     "wan_latents_shape": list(wan_latents.shape),
+                    "wan_steering_mode": args.wan_steering_mode,
+                    "wan_steering_block": int(args.wan_steering_block),
+                    "wan_steering_gate": args.wan_steering_gate,
                     "lerobot_index_head": [int(x) for x in lerobot_index[: min(4, len(lerobot_index))]],
                 },
                 sort_keys=True,
@@ -298,6 +304,9 @@ def main() -> None:
         config.model,
         wan_num_heads=args.wan_num_heads,
         wan_dropout=args.wan_dropout,
+        wan_steering_mode=args.wan_steering_mode,
+        wan_steering_block=args.wan_steering_block,
+        wan_steering_gate=args.wan_steering_gate,
     ).to(device)
 
     first_latents = torch.as_tensor(loader.dataset[0]["wan_latents"])[None].to(device)
