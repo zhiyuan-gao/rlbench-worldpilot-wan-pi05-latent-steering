@@ -32,9 +32,13 @@ class WanFutureVideoFuser(nn.Module):
         max_views: int = 8,
         max_latent_steps: int = 64,
         dropout: float = 0.0,
+        use_residual_gate: bool = False,
+        use_post_norm: bool = True,
     ) -> None:
         super().__init__()
         self.hidden_dim = hidden_dim
+        self.use_residual_gate = bool(use_residual_gate)
+        self.use_post_norm = bool(use_post_norm)
         self.projector = nn.LazyLinear(hidden_dim)
         self.view_embed = nn.Embedding(max_views, hidden_dim)
         self.time_embed = nn.Embedding(max_latent_steps, hidden_dim)
@@ -45,7 +49,9 @@ class WanFutureVideoFuser(nn.Module):
             batch_first=True,
         )
         self.dropout = nn.Dropout(dropout)
-        self.norm = nn.LayerNorm(hidden_dim)
+        self.norm = nn.LayerNorm(hidden_dim) if self.use_post_norm else nn.Identity()
+        if self.use_residual_gate:
+            self.residual_gate = nn.Parameter(torch.zeros(()))
 
     def forward(
         self,
@@ -73,7 +79,10 @@ class WanFutureVideoFuser(nn.Module):
             value=latent_tokens,
             need_weights=False,
         )
-        hidden_states = self.norm(hidden_states_in + self.dropout(attn_out)).to(dtype=input_dtype)
+        residual = self.dropout(attn_out)
+        if self.use_residual_gate:
+            residual = torch.tanh(self.residual_gate) * residual
+        hidden_states = self.norm(hidden_states_in + residual).to(dtype=input_dtype)
         return WanFuserOutput(hidden_states=hidden_states, latent_tokens=latent_tokens)
 
     @staticmethod

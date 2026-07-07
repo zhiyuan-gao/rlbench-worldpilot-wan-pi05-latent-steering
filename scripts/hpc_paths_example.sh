@@ -63,6 +63,20 @@ export WANDB_DIR=${HPC_ROOT}/wandb
 
 mkdir -p "${WAN_LATENT_CACHE_ROOT}" "${CHECKPOINT_BASE_DIR}" "${ASSETS_BASE_DIR}" "${WANDB_DIR}"
 
+# Optional OpenVLA-OFT route. The repo checkout is a code dependency; the
+# checkpoint can be either a local path or a Hugging Face repo id. It is not
+# downloaded by this path file or by shape smoke tests.
+export OPENVLA_OFT_DIR=${HPC_ROOT}/repos/openvla-oft
+export OPENVLA_OFT_VLA_PATH=openvla/openvla-7b
+export OPENVLA_OFT_CHECKPOINT=moojink/openvla-7b-oft-finetuned-libero-spatial-object-goal-10
+export OPENVLA_OFT_CACHE_DIR=${HPC_ROOT}/cache/openvla_oft_hf
+export OPENVLA_OFT_NUM_ACTIONS_CHUNK=8
+export OPENVLA_OFT_ACTION_DIM=7
+export OPENVLA_OFT_PROPRIO_DIM=7
+export OPENVLA_OFT_NUM_IMAGES_IN_INPUT=3
+export OPENVLA_OFT_STATS_PATH=${HPC_ROOT}/cache/openvla_oft_rlbench_dataset_statistics.json
+export OPENVLA_OFT_RUN_ROOT=${HPC_ROOT}/checkpoints/openvla_oft_rlbench
+
 # Online RLBench eval only.
 export RLBENCH_ROOT=${HPC_ROOT}/repos/RLBench
 export COPPELIASIM_ROOT=${HPC_ROOT}/sim/CoppeliaSim_Edu_V4_1_0_Ubuntu20_04

@@ -9,6 +9,7 @@
 - WAN future video latent 的 sample 对齐、导出、缓存和校验。
 - WorldPilot-style `WanFutureVideoFuser`，把 `(V, C, T_lat, H_lat, W_lat)` future latent 变成可注入 pi0.5 的 hidden tokens。
 - PyTorch pi0.5 latent-steering 训练和 online RLBench eval 入口，沿用 RLBench pi0.5 waypoint baseline 的 LeRobot 数据格式和 action target。
+- OpenVLA-OFT experimental route，把同一个 WAN latent fuser 接到 OpenVLA-OFT continuous action-head 前的 action-token hidden states。
 
 ## Branch Profile
 
@@ -29,7 +30,7 @@ dataset format     same LeRobot dataset as pi0.5 waypoint baseline
 main               8x A100 40GB, NPROC_PER_NODE=8
 ```
 
-两条分支只应该在 HPC profile、默认 GPU 数、显存建议和 README 示例上不同；数据格式和方法代码保持一致。
+pi0.5 路线的数据格式和训练语义仍与 `main` 分支保持一致。当前 4xH100 分支额外包含一个 OpenVLA-OFT experimental route，用来评估更接近 WorldPilot hidden-state steering 的 VLA 接法。
 
 ## Method Contract
 
@@ -64,6 +65,38 @@ WorldPilot-style WAN fuser:
 本 repo 固定保留 WAN latent-time 维度，把每个 `(view, latent_time)` 作为一个 future-scene token。
 
 这个 repo 不使用 Wan transformer block13 hidden tokens；Latent Steering 对齐的是 **VAE-before-decode future video latent**。
+
+### OpenVLA-OFT Route
+
+当前分支还包含一条 OpenVLA-OFT 实验路线。它不替换 pi0.5 训练入口，而是作为第二个 VLA backend：
+
+```text
+三视角 RLBench RGB + task text + proprio
+  -> OpenVLA-OFT LoRA VLA
+  -> final action-token hidden states
+  -> OpenVLA-OFT L1 continuous action head
+  -> waypoint action chunk
+```
+
+先跑的 D1 baseline 是 **OpenVLA-OFT on RLBench, no WAN**。它使用同一套 RLBench selected10 raw RGB/lowdim/manifest，动作监督仍是 `current -> next full-task heuristic waypoint`。后续 E1 只是在同一个 OpenVLA-OFT action-token hidden state 和 L1 action head 之间插入：
+
+```text
+WAN 1-step VAE-before-decode future latent -> WanFutureVideoFuser -> residual steering
+```
+
+这条 WAN steering 路线比 pi0.5 early-prefix 版本更接近 WorldPilot，因为 OpenVLA-OFT 会显式返回 action tokens 的 final hidden states，并用 continuous action head 做 L1 regression。
+
+本 repo 不 vendor OpenVLA-OFT，也不把 7B checkpoint 放进 git。需要的路径是：
+
+```bash
+export OPENVLA_OFT_DIR=/path/to/openvla-oft
+export OPENVLA_OFT_VLA_PATH=openvla/openvla-7b
+export OPENVLA_OFT_CHECKPOINT=moojink/openvla-7b-oft-finetuned-libero-spatial-object-goal-10
+```
+
+本地写代码、跑 shape smoke、跑 RLBench raw-data dry-run 都不需要下载 OpenVLA-OFT checkpoint。真实 D1 训练会加载 `OPENVLA_OFT_VLA_PATH`，如果它是 Hugging Face repo id，就会在首次模型加载时下载到 HF cache。`OPENVLA_OFT_CHECKPOINT` 保留给官方 OpenVLA-OFT eval/reference checkpoint 使用；当前 D1 trainer 默认从 `openvla/openvla-7b` 做 LoRA fine-tune。
+
+当前已实现 OpenVLA-OFT hidden-state steering wrapper、RLBench no-WAN D1 trainer、路径检查、wrapper shape smoke 和 RLBench raw-data smoke。OpenVLA-OFT online RLBench eval 是后续步骤，不影响现有 pi0.5 训练和 online eval 入口。
 
 ## Current Experiment Semantics
 
@@ -173,6 +206,7 @@ latent_layout
 2. pi0.5 baseline repo: LeRobot conversion + OpenPI config patch
 3. OpenPI / pi0.5 env: PyTorch pi0.5 model, tokenizer, training code, checkpoint conversion
 4. WAN + RLBench env: WAN FLF latent export/online inference, RLBench/CoppeliaSim online eval
+5. OpenVLA-OFT env: only needed for the optional OpenVLA-OFT route
 ```
 
 训练前只需要第 1-3 块和离线 WAN latent export 环境。真正跑 online eval 时才需要 RLBench/CoppeliaSim。
@@ -228,6 +262,15 @@ export CHECKPOINT_BASE_DIR=${HPC_ROOT}/checkpoints/worldpilot_wan_pi05_checkpoin
 export ASSETS_BASE_DIR=${HPC_ROOT}/assets/worldpilot_wan_pi05_assets
 export WANDB_DIR=${HPC_ROOT}/wandb
 
+export OPENVLA_OFT_DIR=${HPC_ROOT}/repos/openvla-oft
+export OPENVLA_OFT_VLA_PATH=openvla/openvla-7b
+export OPENVLA_OFT_CHECKPOINT=moojink/openvla-7b-oft-finetuned-libero-spatial-object-goal-10
+export OPENVLA_OFT_CACHE_DIR=${HPC_ROOT}/cache/openvla_oft_hf
+export OPENVLA_OFT_RUN_ROOT=${HPC_ROOT}/checkpoints/openvla_oft_rlbench
+export OPENVLA_OFT_STATS_PATH=${HPC_ROOT}/cache/openvla_oft_rlbench_dataset_statistics.json
+export OPENVLA_OFT_NUM_IMAGES_IN_INPUT=3
+export OPENVLA_OFT_PROPRIO_DIM=7
+
 mkdir -p \
   "${HPC_ROOT}/repos" \
   "${HPC_ROOT}/data" \
@@ -235,7 +278,9 @@ mkdir -p \
   "${HPC_ROOT}/sim" \
   "${WAN_LATENT_CACHE_ROOT}" \
   "${CHECKPOINT_BASE_DIR}" \
+  "${OPENVLA_OFT_RUN_ROOT}" \
   "${ASSETS_BASE_DIR}" \
+  "${OPENVLA_OFT_CACHE_DIR}" \
   "${WANDB_DIR}"
 ```
 
@@ -255,6 +300,7 @@ ${SELECTED1500_DATASET_ROOT}
 ${WAN_BASE_MODEL}
 ${WAN_LORA_DIR}              # 如果只做 dummy smoke，可以留空
 ${PYTORCH_WEIGHT_PATH}       # 如果还没有，Install 6 会从 JAX checkpoint 转换生成
+${OPENVLA_OFT_DIR}           # 只在 OpenVLA-OFT route 里需要
 ```
 
 ### Install 2. Clone And Install This Repo
@@ -352,6 +398,45 @@ import openpi.training.config as config
 print("openpi:", openpi.__file__)
 print(config.get_config("pi05_rlbench_waypoint_h1").name)
 PY
+```
+
+### Optional Install 3b. Clone OpenVLA-OFT
+
+这一步只对 OpenVLA-OFT route 必需。只跑 pi0.5 latent steering 时可以跳过。
+
+如果已经有 OpenVLA-OFT checkout，并且 `bash scripts/check_openvla_oft_inputs.sh` 通过，就不用重新 clone：
+
+```bash
+cd "${REPO_ROOT}"
+source .venv/bin/activate
+export OPENVLA_OFT_DIR=/path/to/openvla-oft
+bash scripts/check_openvla_oft_inputs.sh
+```
+
+fresh install:
+
+```bash
+cd "${REPO_ROOT}"
+source .venv/bin/activate
+export OPENVLA_OFT_DIR=${HPC_ROOT}/repos/openvla-oft
+export OPENVLA_OFT_VLA_PATH=openvla/openvla-7b
+export OPENVLA_OFT_CHECKPOINT=moojink/openvla-7b-oft-finetuned-libero-spatial-object-goal-10
+bash scripts/setup_openvla_oft_on_hpc.sh
+bash scripts/check_openvla_oft_inputs.sh
+```
+
+这个步骤只安装 OpenVLA-OFT code。它不会下载 7B checkpoint。D1 训练真正读取的是 `OPENVLA_OFT_VLA_PATH`；它可以是 `openvla/openvla-7b` 这样的 Hugging Face repo id，也可以是本地 checkpoint 路径。只有真实运行 OpenVLA-OFT model load 时才会下载/读取权重。
+
+本地或 HPC 上可以先跑不需要 checkpoint 的 shape smoke：
+
+```bash
+bash scripts/smoke_openvla_oft_shapes.sh
+```
+
+还可以先跑 RLBench raw-data smoke。它只读取 selected10 manifest、RGB path 和 `low_dim_obs.pkl`，并生成 OpenVLA-OFT 用的 action/proprio normalization stats，不会加载 7B VLA：
+
+```bash
+SPLIT=train bash scripts/smoke_openvla_oft_rlbench_data.sh
 ```
 
 ### Install 4. Prepare selected1500 Raw Data
@@ -575,9 +660,9 @@ bash scripts/smoke_online_eval_env.sh
 
 推荐实际执行顺序：
 
-1. 选择 `main` 或 `hpc-4xh100-nvl` 分支。
-2. 复制并填写 `scripts/hpc_paths.sh`。
-3. 跑 `bash scripts/check_hpc_inputs.sh`。
+1. 复制并填写 `scripts/hpc_paths.sh`。
+2. 跑 `bash scripts/check_hpc_inputs.sh`。
+3. 如果要跑 OpenVLA-OFT route，跑 `bash scripts/check_openvla_oft_inputs.sh`、`bash scripts/smoke_openvla_oft_shapes.sh` 和 `bash scripts/smoke_openvla_oft_rlbench_data.sh`。
 4. 为 `train`/`val` 构建 sample index。
 5. 跑 dummy cache smoke 和 train dry-run。
 6. 导出真实 `wan-diffusers` WAN latent cache，并 validate `train`/`val`。
@@ -585,21 +670,7 @@ bash scripts/smoke_online_eval_env.sh
 8. 训练 PyTorch/DDP latent-steering policy。
 9. 直接跑 online RLBench rollout eval。
 
-### 0. Select Branch
-
-8x A100 机器使用：
-
-```bash
-cd /path/to/rlbench_worldpilot_wan_pi05_latent_steering_20260628
-git checkout main
-```
-
-4x H100 NVL 机器使用：
-
-```bash
-cd /path/to/rlbench_worldpilot_wan_pi05_latent_steering_20260628
-git checkout hpc-4xh100-nvl
-```
+如果只跑 OpenVLA-OFT D1 no-WAN baseline，可以跳过第 5-7 步里的 WAN cache 和 pi0.5 checkpoint，直接使用 `scripts/train_openvla_oft_rlbench.sh` 训练 OpenVLA-OFT。只有后续 OpenVLA-OFT + WAN steering 版本才需要第 6 步的 WAN latent cache。
 
 ### 1. Configure Required Paths
 
@@ -637,6 +708,15 @@ export WAN_LATENT_GOAL_MODE=event_end
 
 export HF_LEROBOT_HOME=${PI05_ROOT}/lerobot_home
 export LEROBOT_REPO_ID=rlbench/selected10_pi05_waypoint_h1
+
+# Optional OpenVLA-OFT route.
+export OPENVLA_OFT_DIR=/path/to/openvla-oft
+export OPENVLA_OFT_VLA_PATH=openvla/openvla-7b
+export OPENVLA_OFT_CACHE_DIR=/scratch/path/openvla_oft_hf
+export OPENVLA_OFT_RUN_ROOT=/scratch/path/openvla_oft_rlbench_checkpoints
+export OPENVLA_OFT_STATS_PATH=/scratch/path/openvla_oft_rlbench_dataset_statistics.json
+export OPENVLA_OFT_NUM_IMAGES_IN_INPUT=3
+export OPENVLA_OFT_PROPRIO_DIM=7
 ```
 
 其中 `HF_LEROBOT_HOME` 必须能找到 pi0.5 baseline 已经转换好的 LeRobot 数据：
@@ -761,6 +841,39 @@ ${WAN_LATENT_CACHE_ROOT}/sample_index_train.jsonl
 ${WAN_LATENT_CACHE_ROOT}/sample_index_val.jsonl
 ```
 
+### 4b. Optional OpenVLA-OFT D1 No-WAN Baseline
+
+这一步训练原版 OpenVLA-OFT RLBench baseline，不使用 WAN latent，也不需要 pi0.5 PyTorch checkpoint。它和 pi0.5 baseline 使用同一个 selected10 raw 数据和 waypoint target：
+
+```text
+input:  front + left_shoulder + right_shoulder RGB, task text, current absolute rotvec7 proprio
+target: current -> next full-task heuristic waypoint absolute rotvec7 action
+chunk:  OpenVLA-OFT 8-step L1 chunk, 当前实现把同一个 waypoint target repeat 成 8 个 action slots
+```
+
+先确认 raw data 和 normalization stats：
+
+```bash
+SPLIT=train bash scripts/smoke_openvla_oft_rlbench_data.sh
+```
+
+真实训练会首次下载/加载 `OPENVLA_OFT_VLA_PATH`，默认是 `openvla/openvla-7b`：
+
+```bash
+export EXP_NAME=rlbench_openvla_oft_waypoint_no_wan
+export OPENVLA_OFT_RUN_ROOT=/scratch/path/openvla_oft_rlbench_checkpoints
+export OPENVLA_OFT_CACHE_DIR=/scratch/path/openvla_oft_hf
+
+NPROC_PER_NODE=4 SPLIT=train \
+bash scripts/train_openvla_oft_rlbench.sh \
+  --batch-size 1 \
+  --grad-accumulation-steps 8 \
+  --max-steps 100000 \
+  --save-interval 5000
+```
+
+默认保存内容是 LoRA adapter、OpenVLA-OFT L1 `action_head.pt`、`proprio_projector.pt`、optimizer state 和 `dataset_statistics.json`；不会在每个 checkpoint 自动 merge/save 7B 全量模型。
+
 ### 5. Dummy Cache Smoke Test
 
 先不要跑真实 WAN，先用 dummy latent 确认 sample index、cache 读取和 OpenPI dataloader 能连起来：
@@ -790,8 +903,6 @@ bash scripts/train_worldpilot_wan_pi05_torch.sh \
   --batch-size 4 \
   --no-wandb-enabled
 ```
-
-8x A100 分支把 `NPROC_PER_NODE` 改成 `8`。
 
 `--dry-run` 不启动训练，也不加载 pi0.5 base weights；它用于检查 transformed LeRobot dataset、sample index、latent cache batch 和 split/step 配置。fuser shape 单测仍然用 `bash scripts/smoke_fuser_shapes.sh`。
 
@@ -864,18 +975,6 @@ bash scripts/train_worldpilot_wan_pi05_torch.sh \
   --lr-schedule.warmup-steps 10000
 ```
 
-8x A100:
-
-```bash
-NPROC_PER_NODE=8 \
-bash scripts/train_worldpilot_wan_pi05_torch.sh \
-  --batch-size 128 \
-  --num-train-steps 20000 \
-  --save-interval 2000 \
-  --keep-period 2000 \
-  --lr-schedule.warmup-steps 10000
-```
-
 训练结束后直接进入 Step 9；本实验的论文结果应使用 online RLBench rollout eval。
 
 最短路径清单：
@@ -896,6 +995,12 @@ WAN_OUTPUT_LAYOUT         bcthw for [B,C,T,H,W], btchw for [B,T,C,H,W]
 WAN_LATENT_SHAPE          expected [V,C,T_lat,H_lat,W_lat], default 3,16,6,32,32
 WAN_EXPECTED_BACKEND      wan-diffusers for real training, dummy for dummy smoke
 PYTORCH_WEIGHT_PATH       pi0.5 PyTorch checkpoint
+OPENVLA_OFT_DIR           optional OpenVLA-OFT checkout for OpenVLA-OFT route
+OPENVLA_OFT_VLA_PATH      OpenVLA base VLA for D1 training, default openvla/openvla-7b
+OPENVLA_OFT_CHECKPOINT    optional official eval/reference checkpoint, not used by D1 trainer
+OPENVLA_OFT_CACHE_DIR     optional HF cache dir for OpenVLA-OFT downloads
+OPENVLA_OFT_RUN_ROOT      output directory for OpenVLA-OFT RLBench checkpoints
+OPENVLA_OFT_STATS_PATH    action/proprio normalization stats JSON
 CHECKPOINT_BASE_DIR       output directory for this experiment
 ```
 
@@ -1020,6 +1125,54 @@ WAN_EXPECTED_BACKEND=wan-diffusers \
 SPLIT=train \
 bash scripts/validate_wan_latent_cache.sh
 ```
+
+## Quick Reference: OpenVLA-OFT Route
+
+OpenVLA-OFT route 是 optional，不影响 pi0.5 训练脚本。它的目标接法是：
+
+```text
+D1 no-WAN:
+  RLBench RGB/text/proprio -> OpenVLA-OFT -> final action-token hidden states
+  -> OpenVLA-OFT L1 continuous action head
+
+E1 WAN steering:
+  final action-token hidden states + WAN future latent residual
+  -> OpenVLA-OFT L1 continuous action head
+```
+
+只检查本 repo 的 wrapper shape，不需要 OpenVLA-OFT repo，也不需要 checkpoint：
+
+```bash
+bash scripts/smoke_openvla_oft_shapes.sh
+```
+
+检查 OpenVLA-OFT external checkout 和 checkpoint 配置：
+
+```bash
+export OPENVLA_OFT_DIR=/path/to/openvla-oft
+export OPENVLA_OFT_VLA_PATH=openvla/openvla-7b
+bash scripts/check_openvla_oft_inputs.sh
+```
+
+检查 RLBench raw data/stats，不下载 7B 权重：
+
+```bash
+SPLIT=train bash scripts/smoke_openvla_oft_rlbench_data.sh
+```
+
+训练 D1 no-WAN baseline：
+
+```bash
+EXP_NAME=rlbench_openvla_oft_waypoint_no_wan \
+NPROC_PER_NODE=4 SPLIT=train \
+bash scripts/train_openvla_oft_rlbench.sh \
+  --batch-size 1 \
+  --grad-accumulation-steps 8 \
+  --max-steps 100000 \
+  --save-interval 5000
+```
+
+如果 `OPENVLA_OFT_VLA_PATH` 是 Hugging Face repo id，这个 check 和 raw-data smoke 不会下载权重；只有真实 OpenVLA-OFT model load 时才会下载到 HF cache。如果 HPC 已经提前下载好了 checkpoint，也可以把 `OPENVLA_OFT_VLA_PATH` 指向本地目录。
 
 ## Quick Reference: Training And Online Eval
 

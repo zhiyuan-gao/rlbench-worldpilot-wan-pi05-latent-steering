@@ -39,6 +39,7 @@ check_path "LOWDIM_ROOT_400" "${LOWDIM_ROOT_400}" || missing=1
 check_path "MANIFEST_PATH" "${MANIFEST_PATH}" || missing=1
 check_path "EVENT_MANIFEST_PATH" "${EVENT_MANIFEST_PATH}" || missing=1
 check_path "WAN_BASE_MODEL" "${WAN_BASE_MODEL}" || missing=1
+check_optional_path "OPENVLA_OFT_DIR" "${OPENVLA_OFT_DIR}"
 
 if [[ -e "${WAN_LATENT_CACHE_ROOT}" ]]; then
   printf '[OK]   WAN_LATENT_CACHE_ROOT: %s\n' "${WAN_LATENT_CACHE_ROOT}"
