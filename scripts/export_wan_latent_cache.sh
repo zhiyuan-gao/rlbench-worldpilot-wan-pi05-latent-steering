@@ -14,8 +14,14 @@ if [[ -n "${WAN_LORA_DIR:-}" ]]; then
   EXTRA_ARGS+=(--lora-dir "${WAN_LORA_DIR}")
 fi
 
-cd "${OPENPI_DIR}"
-uv run python -m rlbench_worldpilot_wan_pi05.export_wan_latent_cache \
+WAN_EXPORT_PYTHON="${WAN_EXPORT_PYTHON:-${OPENPI_DIR}/.venv/bin/python}"
+if [[ ! -x "${WAN_EXPORT_PYTHON}" ]]; then
+  echo "WAN_EXPORT_PYTHON is not executable: ${WAN_EXPORT_PYTHON}" >&2
+  exit 2
+fi
+
+cd "${REPO_ROOT}"
+"${WAN_EXPORT_PYTHON}" -m rlbench_worldpilot_wan_pi05.export_wan_latent_cache \
   --manifest-path "${MANIFEST_PATH}" \
   --event-manifest-path "${EVENT_MANIFEST_PATH}" \
   --goal-mode "${WAN_LATENT_GOAL_MODE}" \

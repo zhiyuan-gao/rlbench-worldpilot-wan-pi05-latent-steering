@@ -6,8 +6,9 @@
 # variables that are already exported here, so these values override the local
 # defaults without editing source code.
 
-# This repo.
-export REPO_ROOT=/path/to/rlbench_worldpilot_wan_pi05_latent_steering_20260628
+# Workspace and this repo.
+export WORKSPACE=/path/to/workspace
+export REPO_ROOT=${WORKSPACE}/baselines/rlbench_worldpilot_wan_pi05_latent_steering_20260628
 
 # OpenPI / pi0.5 baseline side.
 export PI05_ROOT=/path/to/pi05_baseline
@@ -31,6 +32,7 @@ export WAN_LATENT_GOAL_MODE=event_end
 # WAN model and generated latent cache.
 export WAN_BASE_MODEL=/path/to/Wan2.1-FLF2V-14B-720P-diffusers
 export WAN_LORA_DIR=/path/to/trained_wan_lora
+export WAN_EXPORT_PYTHON=/path/to/finetrainers-wan/bin/python
 export WAN_LATENT_CACHE_ROOT=/scratch/path/selected10_worldpilot_wan_latent_cache
 export WAN_NUM_INFERENCE_STEPS=1
 export WAN_OUTPUT_LAYOUT=bcthw

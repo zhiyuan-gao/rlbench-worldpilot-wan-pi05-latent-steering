@@ -106,6 +106,11 @@ class WanPi05OnlinePolicy:
                 "No norm stats found for online policy. Make sure the training checkpoint contains "
                 "assets/<asset_id>/norm_stats.json or set ASSETS_BASE_DIR to a directory with stats."
             )
+        action_stats = self.data_config.norm_stats.get("actions") if isinstance(self.data_config.norm_stats, dict) else None
+        action_stat_values = getattr(action_stats, "mean", None)
+        if action_stat_values is None:
+            action_stat_values = getattr(action_stats, "q01", None)
+        self.raw_action_dim = int(np.asarray(action_stat_values).shape[-1]) if action_stat_values is not None else 7
 
         self.model = PI0WanLatentSteeringPytorch(
             self.config.model,
@@ -151,6 +156,16 @@ class WanPi05OnlinePolicy:
 
     @torch.no_grad()
     def infer(self, obs: dict[str, Any], wan_latents: torch.Tensor | np.ndarray) -> dict[str, Any]:
+        obs = dict(obs)
+        if "actions" not in obs:
+            # OpenPI's RLBench repack/model transforms expect the training keys
+            # to exist even during sampling. This placeholder is only used to
+            # satisfy the transform structure; model.sample_actions below
+            # produces the action that is returned to the rollout client.
+            obs["actions"] = np.zeros(
+                (self.config.model.action_horizon, self.raw_action_dim),
+                dtype=np.float32,
+            )
         inputs = self.input_transform(dict(obs))
         inputs = jax.tree.map(self._to_batched_tensor, inputs)
         observation = _model.Observation.from_dict(inputs)

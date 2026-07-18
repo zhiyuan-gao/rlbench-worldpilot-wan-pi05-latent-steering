@@ -90,6 +90,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--wan-steering-mode", choices=("early", "block"), default=os.environ.get("WAN_STEERING_MODE", "early"))
     parser.add_argument("--wan-steering-block", type=int, default=int(os.environ.get("WAN_STEERING_BLOCK", "12")))
     parser.add_argument("--wan-steering-gate", choices=("auto", "on", "off"), default=os.environ.get("WAN_STEERING_GATE", "auto"))
+    parser.add_argument(
+        "--trainable-scope",
+        choices=("all", "wan_fuser", "wan_fuser_action_head"),
+        default=os.environ.get("TRAINABLE_SCOPE", "all"),
+        help=(
+            "Which parameters to optimize. Use wan_fuser on 40GB GPUs to keep pi0.5 frozen and train only "
+            "the WorldPilot-style latent steering adapter."
+        ),
+    )
     parser.add_argument("--expected-wan-num-inference-steps", type=int, default=None)
     parser.add_argument("--expected-wan-backend", default=os.environ.get("WAN_EXPECTED_BACKEND"))
     parser.add_argument("--expected-wan-latent-shape", default=os.environ.get("WAN_LATENT_SHAPE", "3,16,6,32,32"))
@@ -102,6 +111,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--rebuild-sample-index", action="store_true")
     parser.add_argument("--skip-norm-stats", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument(
+        "--dry-run-model",
+        action="store_true",
+        help="Also initialize the model, load weights, configure trainable params, and build the optimizer, then exit.",
+    )
+    parser.add_argument(
+        "--dry-run-step",
+        action="store_true",
+        help="Run one forward/backward/optimizer step, report memory, and exit without writing a checkpoint.",
+    )
     parser.add_argument("--eval-only", action="store_true")
     parser.add_argument("--eval-checkpoint", default=None)
     parser.add_argument("--num-eval-batches", type=int, default=50)
@@ -232,6 +251,31 @@ def init_wandb_if_needed(config, args, enabled: bool):
     return wandb
 
 
+def configure_trainable_parameters(model: torch.nn.Module, scope: str) -> tuple[int, int]:
+    if scope == "all":
+        for param in model.parameters():
+            param.requires_grad_(True)
+    elif scope == "wan_fuser":
+        for param in model.parameters():
+            param.requires_grad_(False)
+        for param in model.wan_fuser.parameters():
+            param.requires_grad_(True)
+    elif scope == "wan_fuser_action_head":
+        for param in model.parameters():
+            param.requires_grad_(False)
+        for module in (model.wan_fuser, model.action_out_proj):
+            for param in module.parameters():
+                param.requires_grad_(True)
+    else:
+        raise ValueError(f"Unsupported trainable scope: {scope}")
+
+    total = sum(param.numel() for param in model.parameters())
+    trainable = sum(param.numel() for param in model.parameters() if param.requires_grad)
+    if trainable == 0:
+        raise ValueError(f"No trainable parameters for trainable scope {scope!r}")
+    return total, trainable
+
+
 def main() -> None:
     init_logging()
     args = parse_args()
@@ -319,19 +363,60 @@ def main() -> None:
         if is_main:
             logging.info("Loaded base PyTorch weights from %s; missing=%d unexpected=%d", model_path, len(missing), len(unexpected))
 
+    total_params, trainable_params = configure_trainable_parameters(model, args.trainable_scope)
+    if is_main:
+        logging.info(
+            "Trainable scope=%s trainable_params=%d total_params=%d trainable_ratio=%.6f",
+            args.trainable_scope,
+            trainable_params,
+            total_params,
+            trainable_params / max(total_params, 1),
+        )
+
+    trainable_parameters = [param for param in model.parameters() if param.requires_grad]
     optimizer = torch.optim.AdamW(
-        model.parameters(),
+        trainable_parameters,
         lr=float(config.lr_schedule.peak_lr),
         betas=(config.optimizer.b1, config.optimizer.b2),
         eps=config.optimizer.eps,
         weight_decay=config.optimizer.weight_decay,
     )
 
+    if args.dry_run_model:
+        if torch.cuda.is_available():
+            torch.cuda.synchronize(device)
+            max_memory_allocated = torch.cuda.max_memory_allocated(device)
+            memory_reserved = torch.cuda.memory_reserved(device)
+        else:
+            max_memory_allocated = 0
+            memory_reserved = 0
+        if is_main:
+            print(
+                json.dumps(
+                    {
+                        "dry_run_model": True,
+                        "config": config.name,
+                        "exp_name": config.exp_name,
+                        "trainable_scope": args.trainable_scope,
+                        "trainable_params": trainable_params,
+                        "total_params": total_params,
+                        "trainable_ratio": trainable_params / max(total_params, 1),
+                        "optimizer_param_groups": len(optimizer.param_groups),
+                        "optimizer_params": sum(param.numel() for group in optimizer.param_groups for param in group["params"]),
+                        "cuda_max_memory_allocated_gb": max_memory_allocated / (1024**3),
+                        "cuda_memory_reserved_gb": memory_reserved / (1024**3),
+                    },
+                    sort_keys=True,
+                )
+            )
+        cleanup_ddp()
+        return
+
     if use_ddp:
         model = torch.nn.parallel.DistributedDataParallel(
             model,
             device_ids=[device.index] if device.type == "cuda" else None,
-            find_unused_parameters=True,
+            find_unused_parameters=False,
             gradient_as_bucket_view=True,
         )
 
@@ -373,6 +458,44 @@ def main() -> None:
         cleanup_ddp()
         return
 
+    if args.dry_run_step:
+        model.train()
+        observation, actions, wan_latents, _indices = next(iter(loader))
+        observation, actions, wan_latents = move_batch_to_device(observation, actions, wan_latents, device)
+        losses = model(observation, actions, wan_latents=wan_latents)
+        loss = losses.mean()
+        loss.backward()
+        grad_norm = torch.nn.utils.clip_grad_norm_(trainable_parameters, max_norm=config.optimizer.clip_gradient_norm)
+        optimizer.step()
+        optimizer.zero_grad(set_to_none=True)
+        if torch.cuda.is_available():
+            torch.cuda.synchronize(device)
+            max_memory_allocated = torch.cuda.max_memory_allocated(device)
+            memory_reserved = torch.cuda.memory_reserved(device)
+        else:
+            max_memory_allocated = 0
+            memory_reserved = 0
+        if is_main:
+            print(
+                json.dumps(
+                    {
+                        "dry_run_step": True,
+                        "config": config.name,
+                        "exp_name": config.exp_name,
+                        "trainable_scope": args.trainable_scope,
+                        "loss": float(loss.detach().cpu()),
+                        "grad_norm": float(grad_norm),
+                        "trainable_params": trainable_params,
+                        "total_params": total_params,
+                        "cuda_max_memory_allocated_gb": max_memory_allocated / (1024**3),
+                        "cuda_memory_reserved_gb": memory_reserved / (1024**3),
+                    },
+                    sort_keys=True,
+                )
+            )
+        cleanup_ddp()
+        return
+
     model.train()
     pbar = tqdm.tqdm(total=int(config.num_train_steps), initial=global_step, disable=not is_main, desc="Training")
     while global_step < int(config.num_train_steps):
@@ -389,7 +512,7 @@ def main() -> None:
             losses = model(observation, actions, wan_latents=wan_latents)
             loss = losses.mean()
             loss.backward()
-            grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=config.optimizer.clip_gradient_norm)
+            grad_norm = torch.nn.utils.clip_grad_norm_(trainable_parameters, max_norm=config.optimizer.clip_gradient_norm)
             optimizer.step()
             optimizer.zero_grad(set_to_none=True)
 
