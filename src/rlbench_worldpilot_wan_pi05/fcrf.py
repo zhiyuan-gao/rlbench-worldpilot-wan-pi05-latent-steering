@@ -6,7 +6,6 @@ from typing import Literal
 import torch
 from torch import nn
 
-
 LatentLayout = Literal["bvcthw", "bvtchw", "bcthw", "btchw"]
 
 
@@ -81,9 +80,7 @@ class WanFutureTokenEncoder(nn.Module):
         if num_views > self.view_embed.num_embeddings:
             raise ValueError(f"num_views={num_views} exceeds max_views={self.view_embed.num_embeddings}")
         if latent_steps > self.time_embed.num_embeddings:
-            raise ValueError(
-                f"latent_steps={latent_steps} exceeds max_latent_steps={self.time_embed.num_embeddings}"
-            )
+            raise ValueError(f"latent_steps={latent_steps} exceeds max_latent_steps={self.time_embed.num_embeddings}")
 
         flat = latents.permute(0, 1, 3, 2, 4, 5).reshape(
             bsz,
@@ -160,9 +157,7 @@ class FCRFResidualFlow(nn.Module):
         latent_layout: LatentLayout = "bvcthw",
     ) -> FCRFResidualOutput:
         if suffix_out_base.ndim != 3:
-            raise ValueError(
-                f"suffix_out_base must be (B, action_horizon, H), got {tuple(suffix_out_base.shape)}"
-            )
+            raise ValueError(f"suffix_out_base must be (B, action_horizon, H), got {tuple(suffix_out_base.shape)}")
         if flow_time.ndim != 1 or flow_time.shape[0] != suffix_out_base.shape[0]:
             raise ValueError(
                 f"flow_time must be (B,), got {tuple(flow_time.shape)} for batch={suffix_out_base.shape[0]}"

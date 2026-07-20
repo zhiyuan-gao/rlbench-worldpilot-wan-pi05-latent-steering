@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+from collections import defaultdict
 import math
 
+from rlbench_worldpilot_wan_pi05.fcrf import FCRFResidualFlow
+from rlbench_worldpilot_wan_pi05.fcrf import WanFutureTokenEncoder
+from rlbench_worldpilot_wan_pi05.train_fcrf_v1 import SameSkillShuffler
+from rlbench_worldpilot_wan_pi05.train_fcrf_v1 import _finalize_metrics
+from rlbench_worldpilot_wan_pi05.train_fcrf_v1 import _update_metrics
 import torch
-
-from rlbench_worldpilot_wan_pi05.fcrf import FCRFResidualFlow, WanFutureTokenEncoder
 
 
 def test_wan_token_encoder_preserves_view_and_time_axes() -> None:
@@ -51,3 +55,71 @@ def test_initial_backward_updates_only_the_residual_output_layer() -> None:
     # gradient; it starts learning once residual_out becomes non-zero.
     assert module.gate_mlp[-1].weight.grad is not None
     assert torch.count_nonzero(module.gate_mlp[-1].weight.grad) == 0
+
+
+def test_same_skill_shuffle_is_event_matched_and_different_episode() -> None:
+    class Dataset:
+        def __init__(self) -> None:
+            self.sample_index = [
+                {
+                    "lerobot_index": episode * 2 + event,
+                    "task": "task_a",
+                    "event_idx": event,
+                    "source_bundle": "all200",
+                    "variation": "variation0",
+                    "episode": f"episode{episode}",
+                }
+                for episode in range(4)
+                for event in range(2)
+            ]
+
+    dataset = Dataset()
+    shuffler = SameSkillShuffler(dataset, seed=0)
+    assert shuffler.task_fallback == 0
+    assert shuffler.event_matched == len(dataset.sample_index)
+    for row in dataset.sample_index:
+        target = shuffler.mapping[row["lerobot_index"]]
+        assert target["task"] == row["task"]
+        assert target["event_idx"] == row["event_idx"]
+        assert target["episode"] != row["episode"]
+
+
+def test_flow_diagnostics_separate_physical_actions_from_padding() -> None:
+    class Shuffler:
+        @staticmethod
+        def task_for(_index: int) -> str:
+            return "task_a"
+
+    target_flow = torch.zeros(1, 1, 32)
+    target_flow[..., :7] = 1.0
+    base_flow = torch.zeros_like(target_flow)
+    correction = torch.zeros_like(target_flow)
+    correction[..., :7] = 1.0
+    matched_loss = torch.zeros_like(target_flow)
+    shuffled_loss = torch.zeros_like(target_flow)
+    shuffled_loss[..., :7] = 1.0
+    raw = {
+        "overall": defaultdict(float),
+        "by_task": {"task_a": defaultdict(float)},
+    }
+    _update_metrics(
+        raw,
+        {"target_flow": target_flow, "base_flow": base_flow},
+        {
+            "flow_loss": matched_loss,
+            "correction": correction,
+            "delta_flow": correction,
+            "gate": torch.full((1, 1, 1), 0.25),
+        },
+        {"flow_loss": shuffled_loss},
+        torch.tensor([9]),
+        Shuffler(),
+    )
+    summary = _finalize_metrics(raw)["overall"]
+
+    assert summary["off_mse"] == 7 / 32
+    assert summary["physical_off_mse"] == 1.0
+    assert summary["physical_matched_mse"] == 0.0
+    assert summary["physical_shuffled_mse"] == 1.0
+    assert math.isclose(summary["physical_correction_cosine"], 1.0, rel_tol=1e-6)
+    assert summary["physical_matched_improvement_over_off"] == 1.0

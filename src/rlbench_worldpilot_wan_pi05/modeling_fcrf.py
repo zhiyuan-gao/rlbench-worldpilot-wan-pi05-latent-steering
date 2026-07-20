@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import torch
 from torch import Tensor
-import torch.nn.functional as F
+import torch.nn.functional as functional
 
-from openpi.models_pytorch.pi0_pytorch import PI0Pytorch, make_att_2d_masks
+from openpi.models_pytorch.pi0_pytorch import PI0Pytorch
+from openpi.models_pytorch.pi0_pytorch import make_att_2d_masks
 
 from .fcrf import FCRFResidualFlow
 
@@ -58,7 +59,7 @@ class PI0FCRFV1Pytorch(PI0Pytorch):
             (trainable if parameter.requires_grad else frozen).append(name)
         return trainable, frozen
 
-    def train(self, mode: bool = True):
+    def train(self, mode: bool = True):  # noqa: FBT001, FBT002
         super().train(mode)
         # The base is a deterministic frozen teacher even while FCRF trains.
         self.paligemma_with_expert.eval()
@@ -169,10 +170,10 @@ class PI0FCRFV1Pytorch(PI0Pytorch):
             gate = fcrf_out.gate
 
         final_flow = base_flow + correction
-        flow_loss = F.mse_loss(target_flow, final_flow, reduction="none")
+        flow_loss = functional.mse_loss(target_flow, final_flow, reduction="none")
         residual_penalty = correction.square().mean(dim=(1, 2))
         desired_correction = target_flow - base_flow
-        correction_cosine = F.cosine_similarity(
+        correction_cosine = functional.cosine_similarity(
             correction.flatten(1),
             desired_correction.flatten(1),
             dim=1,
@@ -259,6 +260,14 @@ class PI0FCRFV1Pytorch(PI0Pytorch):
         if noise is None:
             actions_shape = (bsize, self.config.action_horizon, self.config.action_dim)
             noise = self.sample_noise(actions_shape, device)
+        if wan_latents is not None:
+            if wan_latents.ndim == 5:
+                wan_latents = wan_latents.unsqueeze(0)
+            if wan_latents.ndim != 6:
+                raise ValueError(f"wan_latents must be (B,V,C,T,H,W) or (V,C,T,H,W), got {tuple(wan_latents.shape)}")
+            if wan_latents.shape[0] != bsize:
+                raise ValueError(f"WAN/base batch mismatch: wan={wan_latents.shape[0]} observation={bsize}")
+            wan_latents = wan_latents.to(device=device)
 
         images, img_masks, lang_tokens, lang_masks, state = self._preprocess_observation(
             observation,

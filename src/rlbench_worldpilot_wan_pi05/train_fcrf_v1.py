@@ -17,33 +17,47 @@ import torch
 import torch.distributed as dist
 import tqdm
 
+from openpi.models_pytorch.pi0_pytorch import PI0Pytorch
+
+from .data import collate_wan_latent_batch
 from .data import create_wan_latent_loader
-from .latent_cache import load_latents, parse_latent_shape
+from .latent_cache import load_latents
+from .latent_cache import parse_latent_shape
 from .modeling_fcrf import PI0FCRFV1Pytorch
-from .train_torch import (
-    build_config,
-    cleanup_ddp,
-    init_logging,
-    init_wandb_if_needed,
-    is_main_process,
-    load_training_checkpoint,
-    lr_at_step,
-    move_batch_to_device,
-    save_checkpoint,
-    setup_ddp,
-)
+from .train_torch import build_config
+from .train_torch import cleanup_ddp
+from .train_torch import init_logging
+from .train_torch import init_wandb_if_needed
+from .train_torch import is_main_process
+from .train_torch import load_training_checkpoint
+from .train_torch import lr_at_step
+from .train_torch import move_batch_to_device
+from .train_torch import save_checkpoint
+from .train_torch import setup_ddp
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Train FCRF-v1 on a frozen RLBench pi0.5-ft flow field.")
     parser.add_argument("config_name", nargs="?", default=os.environ.get("CONFIG_NAME", "pi05_rlbench_waypoint_h1"))
     parser.add_argument("--exp-name", default=os.environ.get("EXP_NAME", "selected10_fcrf_v1_pilot2k"))
-    parser.add_argument("--lerobot-repo-id", default=os.environ.get("LEROBOT_REPO_ID", "rlbench/selected10_pi05_waypoint_h1"))
-    parser.add_argument("--manifest-path", default=os.environ.get("MANIFEST_PATH"), required=os.environ.get("MANIFEST_PATH") is None)
+    parser.add_argument(
+        "--lerobot-repo-id", default=os.environ.get("LEROBOT_REPO_ID", "rlbench/selected10_pi05_waypoint_h1")
+    )
+    parser.add_argument(
+        "--manifest-path", default=os.environ.get("MANIFEST_PATH"), required=os.environ.get("MANIFEST_PATH") is None
+    )
     parser.add_argument("--event-manifest-path", default=os.environ.get("EVENT_MANIFEST_PATH"))
-    parser.add_argument("--goal-mode", choices=("event_end", "next_waypoint"), default=os.environ.get("WAN_LATENT_GOAL_MODE", "event_end"))
+    parser.add_argument(
+        "--goal-mode",
+        choices=("event_end", "next_waypoint"),
+        default=os.environ.get("WAN_LATENT_GOAL_MODE", "event_end"),
+    )
     parser.add_argument("--sample-index-path", default=os.environ.get("SAMPLE_INDEX_PATH"))
-    parser.add_argument("--wan-latent-cache-root", default=os.environ.get("WAN_LATENT_CACHE_ROOT"), required=os.environ.get("WAN_LATENT_CACHE_ROOT") is None)
+    parser.add_argument(
+        "--wan-latent-cache-root",
+        default=os.environ.get("WAN_LATENT_CACHE_ROOT"),
+        required=os.environ.get("WAN_LATENT_CACHE_ROOT") is None,
+    )
     parser.add_argument("--split", default=os.environ.get("SPLIT", "train"), choices=("train", "val", "test", "all"))
     parser.add_argument("--sample-every-n", type=int, default=int(os.environ.get("SAMPLE_EVERY_N", "0")))
     parser.add_argument("--rgb-root-200", default=os.environ.get("RGB_ROOT_200"))
@@ -65,11 +79,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--lr-schedule.peak-lr", dest="peak_lr", type=float, default=None)
     parser.add_argument("--lr-schedule.decay-steps", dest="decay_steps", type=int, default=None)
     parser.add_argument("--lr-schedule.decay-lr", dest="decay_lr", type=float, default=None)
-    parser.add_argument("--pytorch-training-precision", choices=("bfloat16", "float32"), default=os.environ.get("PYTORCH_TRAINING_PRECISION"))
+    parser.add_argument(
+        "--pytorch-training-precision",
+        choices=("bfloat16", "float32"),
+        default=os.environ.get("PYTORCH_TRAINING_PRECISION"),
+    )
     parser.add_argument("--fcrf-num-heads", type=int, default=int(os.environ.get("FCRF_NUM_HEADS", "8")))
     parser.add_argument("--fcrf-dropout", type=float, default=float(os.environ.get("FCRF_DROPOUT", "0.0")))
     parser.add_argument("--fcrf-gate-bias", type=float, default=float(os.environ.get("FCRF_GATE_BIAS", "-2.2")))
-    parser.add_argument("--residual-penalty", type=float, default=float(os.environ.get("FCRF_RESIDUAL_PENALTY", "1e-4")))
+    parser.add_argument(
+        "--residual-penalty", type=float, default=float(os.environ.get("FCRF_RESIDUAL_PENALTY", "1e-4"))
+    )
     parser.add_argument("--expected-wan-num-inference-steps", type=int, default=None)
     parser.add_argument("--expected-wan-backend", default=os.environ.get("WAN_EXPECTED_BACKEND"))
     parser.add_argument("--expected-wan-latent-shape", default=os.environ.get("WAN_LATENT_SHAPE", "3,16,6,32,32"))
@@ -149,13 +169,11 @@ def assert_fcrf_trainable_scope(model: PI0FCRFV1Pytorch) -> None:
         name for name, parameter in model.named_parameters() if name.startswith("fcrf.") and not parameter.requires_grad
     ]
     if bad_trainable or frozen_fcrf:
-        raise RuntimeError(
-            f"Invalid FCRF trainable scope: bad_trainable={bad_trainable} frozen_fcrf={frozen_fcrf}"
-        )
+        raise RuntimeError(f"Invalid FCRF trainable scope: bad_trainable={bad_trainable} frozen_fcrf={frozen_fcrf}")
 
 
 def make_loader(args, config, local_batch_size: int, *, shuffle: bool):
-    return create_wan_latent_loader(
+    loader, data_config = create_wan_latent_loader(
         config,
         manifest_path=args.manifest_path,
         event_manifest_path=args.event_manifest_path,
@@ -177,6 +195,23 @@ def make_loader(args, config, local_batch_size: int, *, shuffle: bool):
         rebuild_sample_index=args.rebuild_sample_index,
         skip_norm_stats=args.skip_norm_stats,
     )
+    # The shared training loader intentionally drops partial batches. Offline
+    # diagnostics must not: 400 rows with batch 32 would otherwise report only
+    # 384 samples and silently change the stated protocol.
+    if not shuffle and not dist.is_initialized():
+        generator = torch.Generator()
+        generator.manual_seed(int(config.seed))
+        loader = torch.utils.data.DataLoader(
+            loader.dataset,
+            batch_size=local_batch_size,
+            shuffle=False,
+            num_workers=int(config.num_workers),
+            collate_fn=collate_wan_latent_batch,
+            drop_last=False,
+            generator=generator,
+            persistent_workers=int(config.num_workers) > 0,
+        )
+    return loader, data_config
 
 
 def slice_batch(observation, actions, wan_latents, indices, count: int):
@@ -198,23 +233,32 @@ class SameSkillShuffler:
 
         rng = random.Random(int(seed))
         self.mapping = {}
-        for index, row in self.rows.items():
-            episode_key = (
-                str(row.get("source_bundle")),
-                str(row.get("variation")),
-                str(row.get("episode")),
-            )
-            primary = event_groups[(str(row["task"]), int(row.get("event_idx", -1)))]
-            candidates = [candidate for candidate in primary if self._episode_key(candidate) != episode_key]
-            if not candidates:
+        self.event_matched = 0
+        self.task_fallback = 0
+        for group_rows in event_groups.values():
+            targets = self._different_episode_permutation(group_rows, rng)
+            if targets is not None:
+                for row, target in zip(group_rows, targets, strict=True):
+                    self.mapping[int(row["lerobot_index"])] = target
+                    self.event_matched += 1
+                continue
+            for row in group_rows:
+                episode_key = self._episode_key(row)
                 candidates = [
                     candidate
                     for candidate in task_groups[str(row["task"])]
                     if self._episode_key(candidate) != episode_key
                 ]
-            if not candidates:
-                raise RuntimeError(f"No same-skill different-episode shuffle candidate for row {index}")
-            self.mapping[index] = candidates[rng.randrange(len(candidates))]
+                if not candidates:
+                    raise RuntimeError(
+                        f"No same-skill different-episode shuffle candidate for row {row['lerobot_index']}"
+                    )
+                self.mapping[int(row["lerobot_index"])] = candidates[rng.randrange(len(candidates))]
+                self.task_fallback += 1
+
+        if set(self.mapping) != set(self.rows):
+            missing = sorted(set(self.rows) - set(self.mapping))
+            raise RuntimeError(f"Incomplete same-skill shuffle mapping; missing={missing[:20]}")
 
     @staticmethod
     def _episode_key(row):
@@ -223,6 +267,19 @@ class SameSkillShuffler:
             str(row.get("variation")),
             str(row.get("episode")),
         )
+
+    @classmethod
+    def _different_episode_permutation(cls, rows, rng, max_attempts: int = 1024):
+        if len({cls._episode_key(row) for row in rows}) < 2:
+            return None
+        targets = list(rows)
+        for _ in range(int(max_attempts)):
+            rng.shuffle(targets)
+            if all(
+                cls._episode_key(row) != cls._episode_key(target) for row, target in zip(rows, targets, strict=True)
+            ):
+                return list(targets)
+        return None
 
     def load(self, indices: torch.Tensor, device: torch.device) -> torch.Tensor:
         latents = []
@@ -248,27 +305,55 @@ def _empty_metrics():
     return defaultdict(float)
 
 
+_ACTION_COMPONENTS = {
+    "": slice(None),
+    "physical_": slice(0, 7),
+    "xyz_": slice(0, 3),
+    "rotvec_": slice(3, 6),
+    "gripper_": slice(6, 7),
+}
+
+
 def _update_metrics(metrics, base_outputs, matched, shuffled, sample_indices, shuffler):
-    off_mse = (base_outputs["target_flow"] - base_outputs["base_flow"]).square().mean(dim=(1, 2))
-    matched_mse = matched["flow_loss"].mean(dim=(1, 2))
-    shuffled_mse = shuffled["flow_loss"].mean(dim=(1, 2))
-    correction_norm = matched["correction"].flatten(1).norm(dim=1)
+    target_flow = base_outputs["target_flow"]
+    base_flow = base_outputs["base_flow"]
     residual_norm = matched["delta_flow"].flatten(1).norm(dim=1)
     gate = matched["gate"].flatten(1).mean(dim=1)
-    cosine = matched["correction_cosine"]
+
+    component_values = {}
+    for prefix, component_slice in _ACTION_COMPONENTS.items():
+        target_component = target_flow[..., component_slice]
+        base_component = base_flow[..., component_slice]
+        correction_component = matched["correction"][..., component_slice]
+        desired_component = target_component - base_component
+        correction_norm = correction_component.flatten(1).norm(dim=1)
+        desired_norm = desired_component.flatten(1).norm(dim=1)
+        cosine = torch.nn.functional.cosine_similarity(
+            correction_component.flatten(1),
+            desired_component.flatten(1),
+            dim=1,
+            eps=1e-8,
+        )
+        component_values[prefix] = {
+            "off_mse": desired_component.square().mean(dim=(1, 2)),
+            "matched_mse": matched["flow_loss"][..., component_slice].mean(dim=(1, 2)),
+            "shuffled_mse": shuffled["flow_loss"][..., component_slice].mean(dim=(1, 2)),
+            "correction_cosine": cosine,
+            "positive_cosine": cosine > 0,
+            "correction_norm": correction_norm,
+            "desired_correction_norm": desired_norm,
+            "correction_norm_ratio": correction_norm / desired_norm.clamp_min(1e-8),
+        }
 
     for position, raw_index in enumerate(sample_indices.detach().cpu().tolist()):
         values = {
             "n": 1.0,
-            "off_mse": float(off_mse[position].detach().cpu()),
-            "matched_mse": float(matched_mse[position].detach().cpu()),
-            "shuffled_mse": float(shuffled_mse[position].detach().cpu()),
-            "correction_cosine": float(cosine[position].detach().cpu()),
-            "positive_cosine": float(cosine[position] > 0),
             "gate": float(gate[position].detach().cpu()),
-            "correction_norm": float(correction_norm[position].detach().cpu()),
             "residual_norm": float(residual_norm[position].detach().cpu()),
         }
+        for prefix, component in component_values.items():
+            for key, tensor in component.items():
+                values[f"{prefix}{key}"] = float(tensor[position].detach().cpu())
         for key, value in values.items():
             metrics["overall"][key] += value
             metrics["by_task"][shuffler.task_for(int(raw_index))][key] += value
@@ -281,8 +366,13 @@ def _finalize_metrics(raw):
         for key, value in values.items():
             if key != "n":
                 result[key] = float(value / max(1, count))
-        result["matched_improvement_over_off"] = result["off_mse"] - result["matched_mse"]
-        result["matched_improvement_over_shuffled"] = result["shuffled_mse"] - result["matched_mse"]
+        for prefix in _ACTION_COMPONENTS:
+            result[f"{prefix}matched_improvement_over_off"] = (
+                result[f"{prefix}off_mse"] - result[f"{prefix}matched_mse"]
+            )
+            result[f"{prefix}matched_improvement_over_shuffled"] = (
+                result[f"{prefix}shuffled_mse"] - result[f"{prefix}matched_mse"]
+            )
         return result
 
     return {
@@ -297,9 +387,18 @@ def run_flow_diagnostics(model, loader, args, device, global_step: int) -> dict[
     shuffler = SameSkillShuffler(loader.dataset, seed=args.shuffle_seed)
     raw = {"overall": _empty_metrics(), "by_task": defaultdict(_empty_metrics)}
     processed = 0
-    for batch_idx, (observation, actions, wan_latents, indices) in enumerate(loader):
+    for batch_idx, (
+        batch_observation,
+        batch_actions,
+        batch_wan_latents,
+        batch_indices,
+    ) in enumerate(loader):
         if batch_idx >= int(args.num_eval_batches) or processed >= int(args.max_eval_samples):
             break
+        observation = batch_observation
+        actions = batch_actions
+        wan_latents = batch_wan_latents
+        indices = batch_indices
         remaining = int(args.max_eval_samples) - processed
         if actions.shape[0] > remaining:
             observation, actions, wan_latents, indices = slice_batch(
@@ -336,6 +435,11 @@ def run_flow_diagnostics(model, loader, args, device, global_step: int) -> dict[
         "split": args.split,
         "shuffle": "same-task, preferably same-event-index, different episode",
         "shuffle_seed": int(args.shuffle_seed),
+        "shuffle_event_matched": int(shuffler.event_matched),
+        "shuffle_task_fallback": int(shuffler.task_fallback),
+        "dataset_samples": len(loader.dataset),
+        "requested_max_samples": int(args.max_eval_samples),
+        "evaluated_samples": int(processed),
         **_finalize_metrics(raw),
     }
     if args.diagnostics_out is not None:
@@ -351,7 +455,21 @@ def run_smoke(model, loader, args, device) -> None:
     observation, actions, wan_latents = move_batch_to_device(observation, actions, wan_latents, device)
     noise = model.sample_noise(actions.shape, device)
     time = model.sample_time(actions.shape[0], device)
+
+    # Compare our extracted frozen flow against the unmodified OpenPI forward
+    # on the same model, batch, noise, flow time, and preprocessing RNG state.
+    cpu_rng_state = torch.get_rng_state()
+    cuda_rng_state = torch.cuda.get_rng_state(device) if device.type == "cuda" else None
+    with torch.no_grad():
+        vanilla_loss = PI0Pytorch.forward(model, observation, actions, noise=noise, time=time)
+    torch.set_rng_state(cpu_rng_state)
+    if cuda_rng_state is not None:
+        torch.cuda.set_rng_state(cuda_rng_state, device)
     base_outputs = model.compute_base_outputs(observation, actions, noise=noise, time=time)
+    off_loss = (base_outputs["target_flow"] - base_outputs["base_flow"]).square()
+    max_vanilla_off_loss_difference = float((vanilla_loss - off_loss).abs().max().cpu())
+    if max_vanilla_off_loss_difference != 0.0:
+        raise RuntimeError(f"FCRF-off/OpenPI equivalence failed: max_abs_loss_diff={max_vanilla_off_loss_difference}")
     initial = model.apply_fcrf(base_outputs, wan_latents, enabled=True)
     max_initial_difference = float((initial["final_flow"] - base_outputs["base_flow"]).abs().max().cpu())
     if max_initial_difference != 0.0:
@@ -365,9 +483,7 @@ def run_smoke(model, loader, args, device) -> None:
         if not name.startswith("fcrf.") and parameter.grad is not None
     ]
     fcrf_grad_tensors = sum(
-        int(parameter.grad is not None)
-        for name, parameter in model.named_parameters()
-        if name.startswith("fcrf.")
+        int(parameter.grad is not None) for name, parameter in model.named_parameters() if name.startswith("fcrf.")
     )
     fcrf_nonzero_grad_tensors = sum(
         int(parameter.grad is not None and bool(torch.count_nonzero(parameter.grad)))
@@ -384,6 +500,7 @@ def run_smoke(model, loader, args, device) -> None:
         json.dumps(
             {
                 "smoke": "passed",
+                "vanilla_off_max_abs_loss_difference": max_vanilla_off_loss_difference,
                 "initial_max_abs_flow_difference": max_initial_difference,
                 "initial_gate_mean": float(initial["gate"].mean().detach().cpu()),
                 "fcrf_grad_tensors": int(fcrf_grad_tensors),
@@ -532,9 +649,12 @@ def main() -> None:
     while global_step < int(config.num_train_steps):
         if use_ddp and hasattr(loader.sampler, "set_epoch"):
             loader.sampler.set_epoch(global_step)
-        for observation, actions, wan_latents, _indices in loader:
+        for batch_observation, batch_actions, batch_wan_latents, _indices in loader:
             if global_step >= int(config.num_train_steps):
                 break
+            observation = batch_observation
+            actions = batch_actions
+            wan_latents = batch_wan_latents
             observation, actions, wan_latents = move_batch_to_device(
                 observation,
                 actions,
@@ -549,6 +669,12 @@ def main() -> None:
             flow_loss = outputs["flow_loss"].mean()
             residual_penalty = outputs["residual_penalty"].mean()
             loss = flow_loss + float(args.residual_penalty) * residual_penalty
+            if not bool(torch.isfinite(loss)):
+                raise FloatingPointError(
+                    f"Non-finite FCRF loss at step={global_step}: "
+                    f"flow_loss={float(flow_loss.detach().cpu())} "
+                    f"residual_penalty={float(residual_penalty.detach().cpu())}"
+                )
             loss.backward()
             grad_norm = torch.nn.utils.clip_grad_norm_(
                 trainable_parameters,
@@ -577,10 +703,7 @@ def main() -> None:
             global_step += 1
             if is_main:
                 pbar.update(1)
-            if is_main and (
-                global_step % int(config.save_interval) == 0
-                or global_step == int(config.num_train_steps)
-            ):
+            if is_main and (global_step % int(config.save_interval) == 0 or global_step == int(config.num_train_steps)):
                 save_checkpoint(model, optimizer, global_step, config, data_config, args)
                 logging.info("Saved FCRF-v1 checkpoint at step %d", global_step)
 

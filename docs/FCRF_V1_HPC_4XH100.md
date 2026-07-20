@@ -15,7 +15,9 @@ scripts/train_fcrf_v1_hpc_4xh100.sh
 scripts/smoke_fcrf_v1.sh
 scripts/eval_fcrf_v1_flow.sh
 tests/test_fcrf.py
+tests/smoke_fcrf_ddp.py
 docs/FCRF_V1_HPC_4XH100.md
+CODEX_HANDOFF_FCRF_V1_HPC_4XH100.md
 ```
 
 ## Fixed method
@@ -64,6 +66,7 @@ The smoke must report:
 
 ```text
 initial_max_abs_flow_difference = 0
+vanilla_off_max_abs_loss_difference = 0
 base_grad_tensors = 0
 fcrf_nonzero_grad_tensors > 0
 all trainable parameter names start with fcrf.
@@ -111,12 +114,16 @@ matched WAN latent
 same-task, preferably same-event-index, different-episode WAN latent
 ```
 
+Use the `physical_*` metrics (the first seven dimensions executed by RLBench)
+as the primary decision signal. Unprefixed metrics average all 32 π0.5 model
+dimensions, including 25 padding dimensions.
+
 Continue directly to 10k only if the trend is stable:
 
 ```text
-matched_mse < off_mse
-matched_mse < shuffled_mse
-correction_cosine > 0
+physical_matched_mse < physical_off_mse
+physical_matched_mse < physical_shuffled_mse
+physical_correction_cosine > 0
 residual/correction norms remain finite and controlled
 gate does not collapse to all-zero or all-one
 ```
