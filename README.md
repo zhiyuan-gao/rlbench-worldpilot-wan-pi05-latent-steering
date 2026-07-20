@@ -67,7 +67,7 @@ early:
   然后再进入原版 PaliGemma/Gemma transformer 和 action head。
 
 block:
-  新增的 block12-style 方法。
+  Block12 / GFPI-Frozen 方法。
   先让 pi0.5 的 prefix/suffix joint transformer 正常跑到指定层，
   再只对 prefix stream 注入 WAN residual，后续 transformer blocks 和 action head 继续使用被 steering 后的 hidden states。
 ```
@@ -80,7 +80,7 @@ export WAN_STEERING_BLOCK=12
 export WAN_STEERING_GATE=auto
 ```
 
-`WAN_STEERING_MODE=early` 不使用 residual gate，和之前方法保持一致。`WAN_STEERING_MODE=block` 默认在第 12 个 PaliGemma/Gemma block 后注入，并使用 zero-init residual gate；gated block mode 不额外加 post-norm，所以初始时等价于原版 pi0.5 hidden states，再通过训练学会使用 WAN future latent。
+`WAN_STEERING_MODE=early` 不使用 residual gate，和之前方法保持一致，并默认更新全部参数。`WAN_STEERING_MODE=block` 默认在第 12 个 PaliGemma/Gemma block 后注入，并使用 zero-init residual gate；训练默认采用 `TRAINABLE_SCOPE=wan_fuser`：从已经在 RLBench 上微调好的 pi0.5 checkpoint 初始化，冻结 pi0.5 主体、action expert 和 action head，只更新 `wan_fuser`。gated block mode 不额外加 post-norm，所以初始时等价于该 RLBench pi0.5-ft 的 hidden states，再通过训练学会使用 WAN future latent。这与 HPC 上的 Block12 checkpoint 训练方式一致。
 
 ## Current Experiment Semantics
 
@@ -451,6 +451,8 @@ WAN_EXPECTED_BACKEND=wan-diffusers SPLIT=val bash scripts/validate_wan_latent_ca
 export PYTORCH_WEIGHT_PATH=/path/to/pi05_pytorch_checkpoint
 ```
 
+Block12 / GFPI-Frozen 的这个路径必须指向已经在 RLBench 上微调好的 pi0.5 checkpoint，不能使用原始 pi0.5 base checkpoint。
+
 如果只有 JAX checkpoint，先在 OpenPI 里转换：
 
 ```bash
@@ -481,13 +483,14 @@ bash scripts/train_worldpilot_wan_pi05_torch.sh \
   --lr-schedule.warmup-steps 10000
 ```
 
-默认训练的是原始 early injection 方法。如果要跑 block12-style injection，只需要在同一套数据和 WAN cache 上换实验名并设置 steering mode：
+默认训练的是原始 early injection 方法。如果要跑与 HPC 一致的 Block12 / GFPI-Frozen，在同一套数据和 WAN cache 上换实验名，并设置 block steering 和 frozen scope：
 
 ```bash
 export EXP_NAME=selected10_worldpilot_wan_pi05_block12_torch
 export WAN_STEERING_MODE=block
 export WAN_STEERING_BLOCK=12
 export WAN_STEERING_GATE=auto
+export TRAINABLE_SCOPE=wan_fuser
 
 NPROC_PER_NODE=8 \
 bash scripts/train_worldpilot_wan_pi05_torch.sh \
@@ -522,7 +525,8 @@ WAN_EXPECTED_BACKEND      wan-diffusers for real training, dummy for dummy smoke
 WAN_STEERING_MODE         early for original method, block for block12-style injection
 WAN_STEERING_BLOCK        default 12
 WAN_STEERING_GATE         auto: no gate for early, zero-init gate for block
-PYTORCH_WEIGHT_PATH       pi0.5 PyTorch checkpoint
+TRAINABLE_SCOPE           auto: all for early, wan_fuser for block (GFPI-Frozen)
+PYTORCH_WEIGHT_PATH       RLBench-finetuned pi0.5 PyTorch checkpoint for Block12
 CHECKPOINT_BASE_DIR       output directory for this experiment
 ```
 
@@ -680,11 +684,12 @@ block12 方法示例：
 
 ```bash
 PI05_ROOT=/raid/home/than/zhiyuan/corl2026/pi05_baseline \
-PYTORCH_WEIGHT_PATH=/path/to/pytorch/pi05_base \
+PYTORCH_WEIGHT_PATH=/path/to/pytorch/rlbench_finetuned_pi05 \
 EXP_NAME=selected10_worldpilot_wan_pi05_block12_torch \
 WAN_STEERING_MODE=block \
 WAN_STEERING_BLOCK=12 \
 WAN_STEERING_GATE=auto \
+TRAINABLE_SCOPE=wan_fuser \
 NPROC_PER_NODE=8 \
 bash scripts/train_worldpilot_wan_pi05_torch.sh \
   --batch-size 128 \

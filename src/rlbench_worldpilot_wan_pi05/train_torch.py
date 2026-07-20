@@ -90,6 +90,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--wan-steering-mode", choices=("early", "block"), default=os.environ.get("WAN_STEERING_MODE", "early"))
     parser.add_argument("--wan-steering-block", type=int, default=int(os.environ.get("WAN_STEERING_BLOCK", "12")))
     parser.add_argument("--wan-steering-gate", choices=("auto", "on", "off"), default=os.environ.get("WAN_STEERING_GATE", "auto"))
+    parser.add_argument(
+        "--trainable-scope",
+        choices=("all", "wan_fuser"),
+        default=os.environ.get("TRAINABLE_SCOPE"),
+        help=(
+            "Which parameters to optimize. By default, block steering uses wan_fuser (GFPI-Frozen) and "
+            "early steering uses all. An explicit CLI value or TRAINABLE_SCOPE overrides this default."
+        ),
+    )
     parser.add_argument("--expected-wan-num-inference-steps", type=int, default=None)
     parser.add_argument("--expected-wan-backend", default=os.environ.get("WAN_EXPECTED_BACKEND"))
     parser.add_argument("--expected-wan-latent-shape", default=os.environ.get("WAN_LATENT_SHAPE", "3,16,6,32,32"))
@@ -105,7 +114,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--eval-only", action="store_true")
     parser.add_argument("--eval-checkpoint", default=None)
     parser.add_argument("--num-eval-batches", type=int, default=50)
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.trainable_scope is None:
+        args.trainable_scope = "wan_fuser" if args.wan_steering_mode == "block" else "all"
+    return args
 
 
 def build_config(args: argparse.Namespace):
@@ -232,6 +244,25 @@ def init_wandb_if_needed(config, args, enabled: bool):
     return wandb
 
 
+def configure_trainable_parameters(model: torch.nn.Module, scope: str) -> tuple[int, int]:
+    if scope == "all":
+        for param in model.parameters():
+            param.requires_grad_(True)
+    elif scope == "wan_fuser":
+        for param in model.parameters():
+            param.requires_grad_(False)
+        for param in model.wan_fuser.parameters():
+            param.requires_grad_(True)
+    else:
+        raise ValueError(f"Unsupported trainable scope: {scope}")
+
+    total = sum(param.numel() for param in model.parameters())
+    trainable = sum(param.numel() for param in model.parameters() if param.requires_grad)
+    if trainable == 0:
+        raise ValueError(f"No trainable parameters for trainable scope {scope!r}")
+    return total, trainable
+
+
 def main() -> None:
     init_logging()
     args = parse_args()
@@ -292,6 +323,7 @@ def main() -> None:
                     "wan_steering_mode": args.wan_steering_mode,
                     "wan_steering_block": int(args.wan_steering_block),
                     "wan_steering_gate": args.wan_steering_gate,
+                    "trainable_scope": args.trainable_scope,
                     "lerobot_index_head": [int(x) for x in lerobot_index[: min(4, len(lerobot_index))]],
                 },
                 sort_keys=True,
@@ -317,10 +349,21 @@ def main() -> None:
         model_path = Path(args.pytorch_weight_path) / "model.safetensors"
         missing, unexpected = safetensors.torch.load_model(model, model_path, strict=False, device=str(device))
         if is_main:
-            logging.info("Loaded base PyTorch weights from %s; missing=%d unexpected=%d", model_path, len(missing), len(unexpected))
+            logging.info("Loaded initial PyTorch weights from %s; missing=%d unexpected=%d", model_path, len(missing), len(unexpected))
 
+    total_params, trainable_params = configure_trainable_parameters(model, args.trainable_scope)
+    if is_main:
+        logging.info(
+            "Trainable scope=%s trainable_params=%d total_params=%d trainable_ratio=%.6f",
+            args.trainable_scope,
+            trainable_params,
+            total_params,
+            trainable_params / max(total_params, 1),
+        )
+
+    trainable_parameters = [param for param in model.parameters() if param.requires_grad]
     optimizer = torch.optim.AdamW(
-        model.parameters(),
+        trainable_parameters,
         lr=float(config.lr_schedule.peak_lr),
         betas=(config.optimizer.b1, config.optimizer.b2),
         eps=config.optimizer.eps,
@@ -389,7 +432,7 @@ def main() -> None:
             losses = model(observation, actions, wan_latents=wan_latents)
             loss = losses.mean()
             loss.backward()
-            grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=config.optimizer.clip_gradient_norm)
+            grad_norm = torch.nn.utils.clip_grad_norm_(trainable_parameters, max_norm=config.optimizer.clip_gradient_norm)
             optimizer.step()
             optimizer.zero_grad(set_to_none=True)
 
