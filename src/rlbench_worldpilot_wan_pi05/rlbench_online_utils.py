@@ -165,16 +165,20 @@ def make_obs_config(*, image_size: int = 256):
 def make_action_mode(*, gripper_open_threshold: float = 0.95, stop_on_success: bool = True):
     from pyrep.const import ObjectType
     from pyrep.errors import ConfigurationPathError
-    from pyrep.const import Algos
+    try:
+        from pyrep.const import Algos
+    except ImportError:
+        from pyrep.const import ConfigurationPathAlgorithms as Algos
     from rlbench.action_modes.action_mode import ActionMode
     from rlbench.action_modes.arm_action_modes import (
         EndEffectorPoseViaPlanning,
         RelativeFrame,
+        assert_action_shape,
+        assert_unit_quaternion,
         calculate_delta_pose,
     )
     from rlbench.action_modes.gripper_action_modes import Discrete
     from rlbench.backend.exceptions import InvalidActionError
-    from rlbench.backend.utils import assert_action_shape, assert_unit_quaternion
 
     class EndEffectorPoseViaPlanningWithIgnoreCollision(EndEffectorPoseViaPlanning):
         def __init__(self, *args, **kwargs):

@@ -95,14 +95,19 @@ class WanDiffusersOnlineProvider:
         self.guidance_scale = float(guidance_scale)
         self.lora_scale = float(lora_scale)
         self.output_layout = output_layout
-        self.pipe = WanImageToVideoPipeline.from_pretrained(
-            Path(base_model).as_posix(),
-            torch_dtype=torch_dtype(dtype),
-            device_map=device_map,
-        )
+        offload_mode = device_map if device_map in ("model_cpu_offload", "sequential_cpu_offload") else None
+        load_kwargs = {"torch_dtype": torch_dtype(dtype)}
+        if offload_mode is None:
+            load_kwargs["device_map"] = device_map
+        self.pipe = WanImageToVideoPipeline.from_pretrained(Path(base_model).as_posix(), **load_kwargs)
         if lora_dir is not None and Path(lora_dir).as_posix():
             self.pipe.load_lora_weights(Path(lora_dir).as_posix(), weight_name="pytorch_lora_weights.safetensors")
+        if offload_mode == "model_cpu_offload":
+            self.pipe.enable_model_cpu_offload()
+        elif offload_mode == "sequential_cpu_offload":
+            self.pipe.enable_sequential_cpu_offload()
         self.pipe.set_progress_bar_config(disable=True)
+        self._patch_scheduler_device_alignment()
 
         call_params = set(inspect.signature(self.pipe.__call__).parameters)
         self._supports_last_image = "last_image" in call_params
@@ -117,6 +122,35 @@ class WanDiffusersOnlineProvider:
             self.num_frames,
             temporal_scale=getattr(self.pipe, "vae_scale_factor_temporal", 4),
         )
+
+    def _patch_scheduler_device_alignment(self) -> None:
+        """Keep scheduler inputs on one device when diffusers uses device_map.
+
+        Wan 14B is too large to load comfortably on a single busy 40GB GPU here,
+        so online eval uses diffusers ``device_map=balanced``. In that mode the
+        transformer output can be on a different CUDA device from the scheduler
+        sample tensor, which makes UniPC's arithmetic fail. The scheduler state
+        follows ``sample``, so aligning ``model_output`` to ``sample.device`` is
+        the least invasive fix and leaves the pipeline/model placement intact.
+        """
+
+        scheduler = getattr(self.pipe, "scheduler", None)
+        if scheduler is None or getattr(scheduler, "_worldpilot_device_alignment_patch", False):
+            return
+
+        original_step = scheduler.step
+
+        def step_with_device_alignment(model_output, timestep, sample, *args, **kwargs):
+            if (
+                isinstance(model_output, torch.Tensor)
+                and isinstance(sample, torch.Tensor)
+                and model_output.device != sample.device
+            ):
+                model_output = model_output.to(sample.device)
+            return original_step(model_output, timestep, sample, *args, **kwargs)
+
+        scheduler.step = step_with_device_alignment
+        scheduler._worldpilot_device_alignment_patch = True
 
     @torch.no_grad()
     def __call__(

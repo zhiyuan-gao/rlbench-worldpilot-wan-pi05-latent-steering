@@ -596,6 +596,27 @@ bash scripts/eval_online_rlbench_worldpilot_wan_pi05_torch.sh \
 
 `wan-diffusers` online backend 需要当前环境的 `WanImageToVideoPipeline` 支持 FLF 的 `last_image` 参数；如果当前 diffusers 版本不支持，需要切到 WAN/Finetrainers 对应环境或 patched pipeline。
 
+### Block12 per-event v1 RPC eval
+
+论文评估使用冻结的 per-event v1 协议：π0.5 action noise 每个控制步更新，WAN noise 在同一个 event 内固定；最后一个 event 后继续使用最后一个 goal，直到 RLBench 成功、invalid action 或 30-step 上限。完整定义见 `docs/EVAL_BLOCK12_PER_EVENT_V1_CHANGES.md`。
+
+双 GPU 常驻 WAN/policy 并依次评估任务：
+
+```bash
+export RLBENCH_PY=/path/to/rlbench/python
+export PYREP_ROOT=/path/to/PyRep
+export COPPELIASIM_ROOT=/path/to/CoppeliaSim
+export EVAL_CHECKPOINT=/path/to/gfpi_frozen_block12_checkpoint
+export WAN_BASE_MODEL=/path/to/Wan2.1-FLF2V-14B-diffusers
+export WAN_LORA_DIR=/path/to/wan_lora
+export EVAL_SEED=0
+export TASKS="open_drawer put_money_in_safe reach_and_drag slide_block_to_target"
+
+bash scripts/run_block12_per_event_v1_rpc.sh
+```
+
+正式 10-task 结果分别运行 `EVAL_SEED=0`、`1`、`2`。脚本强制每个任务使用相同的 25 个 val episodes，并拒绝覆盖已有输出目录。
+
 ## Shape Smoke
 
 先只验证 WorldPilot-style WAN fuser 的 PyTorch shape：

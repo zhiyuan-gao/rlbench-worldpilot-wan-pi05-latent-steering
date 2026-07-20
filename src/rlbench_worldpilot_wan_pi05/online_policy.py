@@ -35,6 +35,10 @@ def build_online_config(
         replace_kwargs["pytorch_training_precision"] = precision
     config = dataclasses.replace(config, **replace_kwargs)
     object.__setattr__(config.model, "dtype", config.pytorch_training_precision)
+    # A40-class GPUs cannot compile the long-sequence block path with
+    # max-autotune because Triton exceeds its shared-memory limit. Use the
+    # equivalent eager inference path for portable RPC evaluation.
+    object.__setattr__(config.model, "pytorch_compile_mode", None)
     return config
 
 
@@ -106,6 +110,11 @@ class WanPi05OnlinePolicy:
                 "No norm stats found for online policy. Make sure the training checkpoint contains "
                 "assets/<asset_id>/norm_stats.json or set ASSETS_BASE_DIR to a directory with stats."
             )
+        action_stats = self.data_config.norm_stats.get("actions") if isinstance(self.data_config.norm_stats, dict) else None
+        action_stat_values = getattr(action_stats, "mean", None)
+        if action_stat_values is None:
+            action_stat_values = getattr(action_stats, "q01", None)
+        self.raw_action_dim = int(np.asarray(action_stat_values).shape[-1]) if action_stat_values is not None else 7
 
         self.model = PI0WanLatentSteeringPytorch(
             self.config.model,
@@ -150,17 +159,44 @@ class WanPi05OnlinePolicy:
         return torch.from_numpy(array).to(self.device)[None, ...]
 
     @torch.no_grad()
-    def infer(self, obs: dict[str, Any], wan_latents: torch.Tensor | np.ndarray) -> dict[str, Any]:
+    def infer(
+        self,
+        obs: dict[str, Any],
+        wan_latents: torch.Tensor | np.ndarray | None,
+        *,
+        action_seed: int | None = None,
+    ) -> dict[str, Any]:
+        obs = dict(obs)
+        if "actions" not in obs:
+            # OpenPI's RLBench repack/model transforms expect the training keys
+            # to exist even during sampling. This placeholder is only used to
+            # satisfy the transform structure; model.sample_actions below
+            # produces the action that is returned to the rollout client.
+            obs["actions"] = np.zeros(
+                (self.config.model.action_horizon, self.raw_action_dim),
+                dtype=np.float32,
+            )
         inputs = self.input_transform(dict(obs))
         inputs = jax.tree.map(self._to_batched_tensor, inputs)
         observation = _model.Observation.from_dict(inputs)
-        wan_latents = torch.as_tensor(wan_latents, device=self.device)
-        if wan_latents.ndim == 5:
-            wan_latents = wan_latents[None]
+        if wan_latents is not None:
+            wan_latents = torch.as_tensor(wan_latents, device=self.device)
+            if wan_latents.ndim == 5:
+                wan_latents = wan_latents[None]
+        noise = None
+        if action_seed is not None:
+            generator = torch.Generator(device=self.device).manual_seed(int(action_seed))
+            noise = torch.randn(
+                (1, self.config.model.action_horizon, self.config.model.action_dim),
+                generator=generator,
+                device=self.device,
+                dtype=torch.float32,
+            )
         actions = self.model.sample_actions(
             self.device,
             observation,
             wan_latents=wan_latents,
+            noise=noise,
             num_steps=self.action_num_steps,
         )
         outputs = {
@@ -170,8 +206,14 @@ class WanPi05OnlinePolicy:
         outputs = jax.tree.map(lambda x: np.asarray(x[0, ...].detach().cpu()), outputs)
         return self.output_transform(outputs)
 
-    def infer_action7(self, obs: dict[str, Any], wan_latents: torch.Tensor | np.ndarray) -> np.ndarray:
-        result = self.infer(obs, wan_latents)
+    def infer_action7(
+        self,
+        obs: dict[str, Any],
+        wan_latents: torch.Tensor | np.ndarray | None,
+        *,
+        action_seed: int | None = None,
+    ) -> np.ndarray:
+        result = self.infer(obs, wan_latents, action_seed=action_seed)
         actions = np.asarray(result["actions"], dtype=np.float32)
         if actions.ndim == 1:
             return actions[:7]
